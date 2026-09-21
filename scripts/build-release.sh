@@ -35,7 +35,7 @@ cd "$project_root"
 release_dir="$project_root/release"
 portable_dir="$release_dir/LoviKadr-Portable"
 
-rm -rf "$portable_dir" "$release_dir/LoviKadr-Setup-x64.exe"
+rm -rf "$release_dir"
 mkdir -p "$portable_dir"
 
 dotnet run --project ./tests/PromptixCapture.Tests/PromptixCapture.Tests.csproj -c Release

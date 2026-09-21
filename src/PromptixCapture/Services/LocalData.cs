@@ -48,14 +48,17 @@ public sealed class SettingsService
         if (s.SchemaVersion != 1 || s.General is null || s.Hotkeys is null || s.Screenshot is null || s.Scrolling is null || s.Video is null)
             throw new ArgumentException("Неверная версия или структура настроек.");
         if (!Enum.IsDefined(s.Screenshot.Format) || !Enum.IsDefined(s.Screenshot.DefaultTool) || !Enum.IsDefined(s.Video.Quality) ||
-            s.General.LeftClickAction is not ("QuickPanel" or "Screenshot" or "Settings"))
+            s.General.LeftClickAction is not ("QuickPanel" or "Screenshot" or "Settings") ||
+            s.General.Theme is not ("System" or "Light" or "Dark"))
             throw new ArgumentException("Неизвестный формат, инструмент или действие в настройках.");
         if (s.Screenshot.JpegQuality is < 40 or > 100 || s.Video.FramesPerSecond is not (30 or 60) ||
             s.Video.CountdownSeconds is not (0 or 3 or 5) || s.Scrolling.SettleDelayMs is < 150 or > 2000 ||
             s.Scrolling.WheelDelta is < 120 or > 960 || s.Scrolling.MaxOutputHeight is < 1000 or > 100000 ||
             s.Scrolling.UnchangedFramesToStop is < 2 or > 6)
             throw new ArgumentException("Один из параметров находится за допустимыми границами.");
-        foreach (var path in new[] { s.Screenshot.Folder, s.Video.Folder })
+        if (!string.IsNullOrWhiteSpace(s.Screenshot.Folder) && !Path.IsPathFullyQualified(s.Screenshot.Folder))
+            throw new ArgumentException("Нужен абсолютный путь папки.");
+        foreach (var path in new[] { s.Video.Folder })
             if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path)) throw new ArgumentException("Нужен абсолютный путь папки.");
         FileNames.Format(s.Screenshot.FileNameTemplate, DateTime.Now, 1920, 1080);
         FileNames.Format(s.Video.FileNameTemplate, DateTime.Now, 1920, 1080);

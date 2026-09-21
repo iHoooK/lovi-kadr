@@ -11,6 +11,7 @@
         <Color x:Key="Graphite600">#344154</Color>
         <Color x:Key="TextPrimary">#182230</Color>
         <Color x:Key="TextSecondary">#52667F</Color>
+        <Color x:Key="ButtonText">#F4F7FB</Color>
         <Color x:Key="Cyan">#35D0FF</Color>
         <Color x:Key="Gold">#F0A43A</Color>
         <Color x:Key="Success">#54D68C</Color>
@@ -22,6 +23,7 @@
         <SolidColorBrush x:Key="Graphite600Brush" Color="{StaticResource Graphite600}" />
         <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimary}" />
         <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondary}" />
+        <SolidColorBrush x:Key="ButtonTextBrush" Color="{StaticResource ButtonText}" />
         <SolidColorBrush x:Key="CyanBrush" Color="{StaticResource Cyan}" />
         <SolidColorBrush x:Key="GoldBrush" Color="{StaticResource Gold}" />
         <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource Danger}" />
@@ -39,7 +41,7 @@
         </Style>
 
         <Style TargetType="Button">
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource ButtonTextBrush}" />
             <Setter Property="Background" Value="{StaticResource Graphite700Brush}" />
             <Setter Property="BorderBrush" Value="{StaticResource Graphite600Brush}" />
             <Setter Property="BorderThickness" Value="1" />
@@ -52,7 +54,8 @@
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="9" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">

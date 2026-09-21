@@ -2,14 +2,29 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using Microsoft.Win32;
 
 namespace PromptixCapture.Windows;
 
 internal static class Ui
 {
     internal static readonly Brush Cyan=new SolidColorBrush(Color.FromRgb(53,208,255));
-    internal static readonly Brush TextPrimary=new SolidColorBrush(Color.FromRgb(24,34,48));
-    internal static readonly Brush Muted=new SolidColorBrush(Color.FromRgb(82,102,127));
+    internal static readonly SolidColorBrush TextPrimary=new(Color.FromRgb(24,34,48));
+    internal static readonly SolidColorBrush Muted=new(Color.FromRgb(82,102,127));
+    internal static void ApplyTheme(string preference)
+    {
+        bool dark=preference=="Dark" || (preference=="System" && SystemPrefersDark());
+        var colors=dark
+            ? new Dictionary<string,Color>{{"Graphite900Brush",Color.FromRgb(13,17,23)},{"Graphite800Brush",Color.FromRgb(21,27,35)},{"Graphite700Brush",Color.FromRgb(32,41,54)},{"Graphite600Brush",Color.FromRgb(52,65,84)},{"TextPrimaryBrush",Color.FromRgb(244,247,251)},{"TextSecondaryBrush",Color.FromRgb(169,182,199)},{"ButtonTextBrush",Color.FromRgb(244,247,251)}}
+            : new Dictionary<string,Color>{{"Graphite900Brush",Color.FromRgb(247,249,252)},{"Graphite800Brush",Colors.White},{"Graphite700Brush",Color.FromRgb(32,41,54)},{"Graphite600Brush",Color.FromRgb(52,65,84)},{"TextPrimaryBrush",Color.FromRgb(24,34,48)},{"TextSecondaryBrush",Color.FromRgb(82,102,127)},{"ButtonTextBrush",Color.FromRgb(244,247,251)}};
+        foreach(var pair in colors)if(Application.Current.Resources[pair.Key] is SolidColorBrush brush)brush.Color=pair.Value;
+        TextPrimary.Color=colors["TextPrimaryBrush"];Muted.Color=colors["TextSecondaryBrush"];
+    }
+    private static bool SystemPrefersDark()
+    {
+        try{return Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize","AppsUseLightTheme",1) is int value && value==0;}
+        catch{return false;}
+    }
     internal static Button Button(string text,Action action,string? tip=null)
     {
         var button=new Button{Content=text,Margin=new Thickness(3),MinHeight=36,ToolTip=tip??text};button.Click+=(_,_)=>action();return button;

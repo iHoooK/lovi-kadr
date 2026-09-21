@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -7,6 +8,8 @@ using DRect = System.Drawing.Rectangle;
 
 namespace PromptixCapture.Windows;
 
+public enum SelectionAction { Confirm, Copy, Save, Editor }
+
 // One native window sized in physical pixels; drawing and hit testing use its
 // measured client-size ratios, not the primary monitor's DPI.
 public sealed class RegionSelectionWindow : Window
@@ -14,21 +17,31 @@ public sealed class RegionSelectionWindow : Window
     private readonly SelectionSurface _surface;
     private readonly DRect _desktop;
     public DRect? Result { get; private set; }
+    public SelectionAction Action { get; private set; } = SelectionAction.Confirm;
     public RegionSelectionWindow(BitmapSource screen, DRect desktop, DRect? previous = null)
     {
         _desktop = desktop;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false; Topmost = true; Cursor = Cursors.Cross;
         Title = "ЛовиКадр — выбор области";
-        _surface = new SelectionSurface(screen, desktop, previous);
-        Content = _surface;
+        _surface = new SelectionSurface(screen, desktop, null);
+        var root=new Grid();root.Children.Add(_surface);
+        var toolbar=new Border{Background=new SolidColorBrush(Color.FromArgb(235,21,27,35)),BorderBrush=Ui.Cyan,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Padding=new Thickness(6),HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Bottom,Margin=new Thickness(12)};
+        var actions=new StackPanel{Orientation=Orientation.Horizontal};
+        actions.Children.Add(Ui.Button("Копировать",()=>Finish(SelectionAction.Copy),"Ctrl+C"));
+        actions.Children.Add(Ui.Button("Сохранить",()=>Finish(SelectionAction.Save),"Ctrl+S"));
+        actions.Children.Add(Ui.Button("Редактор",()=>Finish(SelectionAction.Editor),"Открыть подробный редактор"));
+        actions.Children.Add(Ui.Button("Готово",()=>Finish(SelectionAction.Confirm),"Enter"));
+        actions.Children.Add(Ui.Button("Отмена",()=>{DialogResult=false;},"Esc"));toolbar.Child=actions;root.Children.Add(toolbar);Content=root;
         SourceInitialized += (_, _) => NativeMethods.PlacePixels(this, desktop);
         Loaded += (_, _) => { NativeMethods.PlacePixels(this, desktop); Activate(); Focus(); };
         KeyDown += (_, e) =>
         {
-            if (e.Key == Key.Escape) { DialogResult = false; e.Handled = true; }
+            if (e.Key == Key.Escape) { DialogResult = false; e.Handled = true; return; }
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && e.Key==Key.C) { Finish(SelectionAction.Copy); e.Handled=true; return; }
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && e.Key==Key.S) { Finish(SelectionAction.Save); e.Handled=true; return; }
             if (e.Key == Key.Enter && _surface.Selection.Width > 2 && _surface.Selection.Height > 2)
-            { Result = _surface.PixelRectangle(); DialogResult = true; e.Handled = true; }
+            { Finish(SelectionAction.Confirm); e.Handled = true; }
             var delta = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 10 : 1;
             if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
             {
@@ -37,7 +50,12 @@ public sealed class RegionSelectionWindow : Window
             }
         };
         MouseRightButtonDown += (_, _) => DialogResult = false;
-        MouseDoubleClick += (_, _) => { if (_surface.Selection.Width > 2 && _surface.Selection.Height > 2) { Result = _surface.PixelRectangle(); DialogResult = true; } };
+        MouseDoubleClick += (_, _) => Finish(SelectionAction.Confirm);
+    }
+    private void Finish(SelectionAction action)
+    {
+        if(_surface.Selection.Width<=2 || _surface.Selection.Height<=2)return;
+        Action=action;Result=_surface.PixelRectangle();DialogResult=true;
     }
 
     private sealed class SelectionSurface : FrameworkElement
@@ -54,7 +72,7 @@ public sealed class RegionSelectionWindow : Window
             if (previous is { } p && desktop.Contains(p)) Selection = new Rect(p.X - desktop.X, p.Y - desktop.Y, p.Width, p.Height);
             MouseLeftButtonDown += Down;
             MouseMove += Drag;
-            MouseLeftButtonUp += (_, _) => ReleaseMouseCapture();
+            MouseLeftButtonUp += (_, e) => { ReleaseMouseCapture(); UpdateCursor(PixelPoint(e)); };
         }
         private Point PixelPoint(MouseEventArgs e) { var p = e.GetPosition(this); return new Point(p.X * _desktop.Width / ActualWidth, p.Y * _desktop.Height / ActualHeight); }
         private IEnumerable<Point> Handles()
@@ -75,9 +93,26 @@ public sealed class RegionSelectionWindow : Window
             if (_drag == 0) Selection = new Rect(_start, _start);
             CaptureMouse(); InvalidateVisual();
         }
+        private int HitHandle(Point point)
+        {
+            int i=0;foreach(var handle in Handles()){if((handle-point).Length<12)return i;i++;}return -1;
+        }
+        private void UpdateCursor(Point point)
+        {
+            if(Selection.Width<=0){Cursor=Cursors.Cross;return;}
+            Cursor=HitHandle(point) switch
+            {
+                0 or 4=>Cursors.SizeNWSE,
+                2 or 6=>Cursors.SizeNESW,
+                1 or 5=>Cursors.SizeNS,
+                3 or 7=>Cursors.SizeWE,
+                _ when Selection.Contains(point)=>Cursors.SizeAll,
+                _=>Cursors.Cross
+            };
+        }
         private void Drag(object sender, MouseEventArgs e)
         {
-            if (!IsMouseCaptured) return;
+            if (!IsMouseCaptured){UpdateCursor(PixelPoint(e));return;}
             var p = PixelPoint(e); p.X = Math.Clamp(p.X, 0, _desktop.Width); p.Y = Math.Clamp(p.Y, 0, _desktop.Height);
             var d = p - _start;
             if (_drag == 0) Selection = new Rect(_start, p);
@@ -94,7 +129,7 @@ public sealed class RegionSelectionWindow : Window
                 if (h is 4 or 5 or 6) b.Y = p.Y;
                 Selection = new Rect(a, b);
             }
-            InvalidateVisual();
+            InvalidateVisual();UpdateCursor(p);
         }
         public void Move(int x, int y)
         {

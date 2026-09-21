@@ -57,11 +57,13 @@ public sealed class SettingsWindow : Window
                 Check("Показывать уведомления",_draft.General.ShowNotifications,v=>_draft.General.ShowNotifications=v);
                 Check("Звук после быстрого снимка",_draft.General.PlaySounds,v=>_draft.General.PlaySounds=v);
                 Check("Тихий режим (без звуков и уведомлений)",_draft.General.QuietMode,v=>_draft.General.QuietMode=v);
+                Choice("Тема",new[]{"Системная","Светлая","Тёмная"},_draft.General.Theme switch{"Light"=>"Светлая","Dark"=>"Тёмная",_=>"Системная"},v=>_draft.General.Theme=v switch{"Светлая"=>"Light","Тёмная"=>"Dark",_=>"System"});
                 Choice("Левый щелчок по значку",new[]{"Быстрая панель","Снимок области","Настройки"},_draft.General.LeftClickAction switch{"Screenshot"=>"Снимок области","Settings"=>"Настройки",_=>"Быстрая панель"},v=>_draft.General.LeftClickAction=v switch{"Снимок области"=>"Screenshot","Настройки"=>"Settings",_=>"QuickPanel"});
                 _page.Children.Add(Ui.Button("Открыть папку служебных данных",()=>{Directory.CreateDirectory(LocalData.Folder);Ui.Open(LocalData.Folder);}));
                 Note("Автозапуск привязан к пути EXE. Сначала переместите portable-сборку в постоянную папку. Никакие данные не отправляются в сеть.");break;
             case 1:
-                Heading("Горячие клавиши");Note("Щёлкните поле и нажмите нужное сочетание. Backspace / Delete очищает поле. Если Print Screen занят Ножницами Windows — отключите его в системных параметрах клавиатуры.");
+                Heading("Горячие клавиши");Note("Щёлкните поле и нажмите нужное сочетание. Backspace / Delete очищает поле.");
+                Note("Пока ЛовиКадр запущен и использует Print Screen, он временно отключает запуск Ножниц Windows этой кнопкой. При обычном выходе исходная системная настройка возвращается.");
                 var names=new[]{"Область","Активное окно","Монитор под курсором","Весь рабочий стол","Длинный снимок / стоп","Видео / стоп","Пауза видео"};int i=0;
                 foreach(var property in typeof(HotkeySettings).GetProperties())
                 {
@@ -82,8 +84,7 @@ public sealed class SettingsWindow : Window
                 Number("Качество JPEG (40–100)",_draft.Screenshot.JpegQuality,v=>_draft.Screenshot.JpegQuality=v);
                 Check("Копировать в буфер без редактора",_draft.Screenshot.CopyToClipboard,v=>_draft.Screenshot.CopyToClipboard=v);
                 Check("Автосохранение (в том числе при копировании из редактора)",_draft.Screenshot.AutoSave,v=>_draft.Screenshot.AutoSave=v);
-                Check("Открывать редактор после снимка",_draft.Screenshot.OpenEditor,v=>_draft.Screenshot.OpenEditor=v);
-                Check("Запоминать последнюю область",_draft.Screenshot.RememberLastRegion,v=>_draft.Screenshot.RememberLastRegion=v);
+                Check("Открывать подробный редактор после снимка",_draft.Screenshot.OpenEditor,v=>_draft.Screenshot.OpenEditor=v);
                 Check("Включать курсор в снимок",_draft.Screenshot.IncludeCursor,v=>_draft.Screenshot.IncludeCursor=v);
                 Choice("Инструмент по умолчанию",Enum.GetValues<AnnotationTool>(),_draft.Screenshot.DefaultTool,v=>_draft.Screenshot.DefaultTool=v);
                 _page.Children.Add(Ui.Button("Проверить имя",()=>{try{Read();MessageBox.Show(this,FileNames.Format(_draft.Screenshot.FileNameTemplate,DateTime.Now,1920,1080),"Пример имени");}catch(Exception ex){Ui.Error(ex);}}));break;

@@ -6,6 +6,7 @@ portable/
 .vs/
 .vscode/
 .idea/
+.codex/
 *.user
 *.suo
 *.log

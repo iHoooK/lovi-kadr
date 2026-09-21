@@ -17,6 +17,7 @@ public sealed class AppController : IDisposable
     private readonly HistoryService _history=new();
     private readonly CaptureService _capture=new();
     private readonly HotkeyService _hotkeys=new();
+    private readonly PrintScreenSnippingService _printScreenSnipping=new();
     private Forms.NotifyIcon? _tray;
     private SettingsWindow? _settingsWindow;
     private Window? _quickPanel;
@@ -27,7 +28,8 @@ public sealed class AppController : IDisposable
     public void Initialize(string[] args)
     {
         bool first=!File.Exists(Path.Combine(LocalData.Folder,"settings.json"));
-        _settings.Load();_history.Load();
+        _settings.Load();Ui.ApplyTheme(_settings.Current.General.Theme);_history.Load();
+        if(typeof(HotkeySettings).GetProperties().Select(p=>p.GetValue(_settings.Current.Hotkeys) as string).Any(v=>v?.Contains("PrintScreen",StringComparison.OrdinalIgnoreCase)==true))_printScreenSnipping.DisableForThisSession();
         _settings.Current.General.StartWithWindows=AutostartService.IsEnabled();
         _tray=new Forms.NotifyIcon{Text="ЛовиКадр • снимки и видео",Icon=CreateIcon(),Visible=true};
         BuildMenu();
@@ -58,7 +60,16 @@ public sealed class AppController : IDisposable
     private void BuildMenu()
     {
         var menu=new Forms.ContextMenuStrip();
-        void Add(string title,Action action){var item=new Forms.ToolStripMenuItem(title);item.Click+=(_,_)=>Dispatcher.BeginInvoke(action);menu.Items.Add(item);}
+        void Add(string title,Action action)
+        {
+            var item=new Forms.ToolStripMenuItem(title);
+            item.Click+=async(_,_)=>
+            {
+                // A modal WPF selector cannot be shown while the WinForms tray menu is closing.
+                await Task.Delay(150);_ = Dispatcher.BeginInvoke(action,DispatcherPriority.ContextIdle);
+            };
+            menu.Items.Add(item);
+        }
         Add("Снимок области",()=>_=Capture(CaptureMode.Region,CapturePurpose.Screenshot));
         Add("Снимок последней области",()=>_=Capture(CaptureMode.LastRegion,CapturePurpose.Screenshot));
         Add("Запись / стоп видео",()=>{if(_recording is not null)_recording.Stop();else _=Capture(CaptureMode.Region,CapturePurpose.Video);});
@@ -78,7 +89,9 @@ public sealed class AppController : IDisposable
         _settingsWindow=new SettingsWindow(_settings.Current,settings=>
         {
             AutostartService.SetEnabled(settings.General.StartWithWindows);
-            _settings.Save(settings);ReportHotkeys(_hotkeys.Register(settings.Hotkeys));BuildMenu();
+            _settings.Save(settings);Ui.ApplyTheme(settings.General.Theme);
+            if(typeof(HotkeySettings).GetProperties().Select(p=>p.GetValue(settings.Hotkeys) as string).Any(v=>v?.Contains("PrintScreen",StringComparison.OrdinalIgnoreCase)==true))_printScreenSnipping.DisableForThisSession();
+            ReportHotkeys(_hotkeys.Register(settings.Hotkeys));BuildMenu();
         },tab);
         _settingsWindow.Closed+=(_,_)=>_settingsWindow=null;_settingsWindow.Show();
     }
@@ -118,10 +131,18 @@ public sealed class AppController : IDisposable
             var image=await _capture.CaptureAsync(bounds,purpose==CapturePurpose.Screenshot && _settings.Current.Screenshot.IncludeCursor);
             if(mode==CaptureMode.Region)
             {
-                var picker=new RegionSelectionWindow(image,all,_settings.Current.Screenshot.RememberLastRegion?_settings.Current.Screenshot.LastRegion?.ToRectangle():null);
+                var picker=new RegionSelectionWindow(image,all);
                 if(picker.ShowDialog()!=true||picker.Result is not {} selection)return;
                 bounds=selection;image=BitmapTools.Crop(image,new Rectangle(bounds.X-all.X,bounds.Y-all.Y,bounds.Width,bounds.Height));
-                if(_settings.Current.Screenshot.RememberLastRegion){_settings.Current.Screenshot.LastRegion=SerializableRectangle.FromRectangle(bounds);_settings.Save(_settings.Current);}
+                switch(picker.Action)
+                {
+                    case SelectionAction.Copy:
+                        await ImageExportService.CopyAsync(image);Notify("Снимок скопирован в буфер обмена");return;
+                    case SelectionAction.Save:
+                        SaveScreenshot(image,HistoryMediaType.Screenshot);return;
+                    case SelectionAction.Editor:
+                        new EditorWindow(image,_settings.Current.Screenshot,_history,HistoryMediaType.Screenshot).Show();return;
+                }
             }
             if(purpose!=CapturePurpose.Screenshot && !Forms.Screen.AllScreens.Any(s=>s.Bounds.Contains(bounds)))throw new InvalidOperationException("Для видео и длинного снимка выделите область внутри одного монитора.");
             if(purpose==CapturePurpose.Video)
@@ -161,11 +182,25 @@ public sealed class AppController : IDisposable
         if(settings.CopyToClipboard)await ImageExportService.CopyAsync(image);
         if(settings.AutoSave || !settings.CopyToClipboard)
         {
-            var path=ImageExportService.DefaultPath(image,settings);ImageExportService.Save(image,path,settings.JpegQuality);
-            _history.Add(new HistoryItem{Path=path,Type=type,Width=image.PixelWidth,Height=image.PixelHeight});
+            SaveScreenshot(image,type);
         }
         Notify("Снимок готов"+(_capture.LastBackend.StartsWith("GDI")?" • резервный GDI-захват":""));
         if(_settings.Current.General.PlaySounds&&!_settings.Current.General.QuietMode)System.Media.SystemSounds.Asterisk.Play();
+    }
+    private bool EnsureScreenshotFolder(ScreenshotSettings settings)
+    {
+        if(!string.IsNullOrWhiteSpace(settings.Folder))return true;
+        using var dialog=new Forms.FolderBrowserDialog{Description="Выберите папку для всех скриншотов ЛовиКадра",ShowNewFolderButton=true};
+        if(dialog.ShowDialog()!=Forms.DialogResult.OK)return false;
+        settings.Folder=dialog.SelectedPath;_settings.Save(_settings.Current);return true;
+    }
+    private void SaveScreenshot(System.Windows.Media.Imaging.BitmapSource image,HistoryMediaType type)
+    {
+        var settings=_settings.Current.Screenshot;
+        if(!EnsureScreenshotFolder(settings))return;
+        var path=ImageExportService.DefaultPath(image,settings);ImageExportService.Save(image,path,settings.JpegQuality);
+        _history.Add(new HistoryItem{Path=path,Type=type,Width=image.PixelWidth,Height=image.PixelHeight});
+        Notify("Снимок сохранён: "+Path.GetFileName(path));
     }
     private void Notify(string text)
     {if(_settings.Current.General.ShowNotifications&&!_settings.Current.General.QuietMode)_tray?.ShowBalloonTip(2500,"ЛовиКадр",text,Forms.ToolTipIcon.Info);}
@@ -177,10 +212,12 @@ public sealed class AppController : IDisposable
     }
     private static Icon CreateIcon()
     {
+        var asset=Path.Combine(AppContext.BaseDirectory,"Assets","lovi-kadr.ico");
+        if(File.Exists(asset))return new Icon(asset);
         using var bitmap=new Bitmap(32,32);using(var g=Graphics.FromImage(bitmap))
         {g.Clear(Color.FromArgb(13,17,23));using var cyan=new Pen(Color.FromArgb(53,208,255),3);using var gold=new Pen(Color.FromArgb(240,164,58),2);g.DrawRectangle(cyan,4,4,24,24);g.DrawRectangle(gold,10,10,12,12);}
         var handle=bitmap.GetHicon();try{return (Icon)Icon.FromHandle(handle).Clone();}finally{DestroyIcon(handle);}
     }
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr icon);
-    public void Dispose(){_hotkeys.Dispose();if(_tray is not null){_tray.Visible=false;_tray.Icon?.Dispose();_tray.ContextMenuStrip?.Dispose();_tray.Dispose();}}
+    public void Dispose(){_hotkeys.Dispose();_printScreenSnipping.Dispose();if(_tray is not null){_tray.Visible=false;_tray.Icon?.Dispose();_tray.ContextMenuStrip?.Dispose();_tray.Dispose();}}
 }

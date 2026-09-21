@@ -9,7 +9,7 @@
     <RootNamespace>PromptixCapture</RootNamespace>
     <AssemblyName>LoviKadr</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>Assets/promptix-capture.ico</ApplicationIcon>
+    <ApplicationIcon>Assets/lovi-kadr.ico</ApplicationIcon>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -36,6 +36,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Assets\promptix-capture.svg" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Assets\lovi-kadr.svg" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Assets\lovi-kadr.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

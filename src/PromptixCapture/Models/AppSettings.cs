@@ -21,6 +21,7 @@ public sealed class GeneralSettings
     public bool ShowNotifications { get; set; } = true;
     public bool PlaySounds { get; set; } = true;
     public bool QuietMode { get; set; }
+    public string Theme { get; set; } = "System";
     public string LeftClickAction { get; set; } = "QuickPanel";
     public string Language { get; set; } = "ru-RU";
 }
@@ -38,15 +39,14 @@ public sealed class HotkeySettings
 
 public sealed class ScreenshotSettings
 {
-    public string Folder { get; set; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "LoviKadr");
+    public string Folder { get; set; } = "";
     public string FileNameTemplate { get; set; } = "Screenshot_{yyyy-MM-dd}_{HH-mm-ss}";
     [JsonConverter(typeof(JsonStringEnumConverter<ImageFileFormat>))]
     public ImageFileFormat Format { get; set; } = ImageFileFormat.Png;
     public int JpegQuality { get; set; } = 90;
     public bool CopyToClipboard { get; set; } = true;
     public bool AutoSave { get; set; }
-    public bool OpenEditor { get; set; } = true;
+    public bool OpenEditor { get; set; }
     public bool RememberLastRegion { get; set; } = true;
     public bool IncludeCursor { get; set; }
     [JsonConverter(typeof(JsonStringEnumConverter<AnnotationTool>))]
