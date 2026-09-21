@@ -1,0 +1,13 @@
+bin/
+obj/
+artifacts/
+release/
+portable/
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.log
+TestResults/
+src/PromptixCapture/appsettings.Development.json

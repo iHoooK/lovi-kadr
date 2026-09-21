@@ -1,0 +1,32 @@
+name: Build ЛовиКадр
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+      - name: Build release
+        shell: bash
+        run: bash scripts/build-release.sh
+      - name: Upload release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: LoviKadr-win-x64
+          path: |
+            release/LoviKadr-Setup-x64.exe
+            release/LoviKadr-Portable/
+          if-no-files-found: error

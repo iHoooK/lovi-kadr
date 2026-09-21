@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>PromptixCapture</RootNamespace>
+    <AssemblyName>LoviKadr</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/promptix-capture.ico</ApplicationIcon>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <RuntimeFrameworkVersion>10.0.12</RuntimeFrameworkVersion>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <Product>ЛовиКадр</Product>
+    <Authors>iHoooK</Authors>
+    <Description>Локальное приложение для снимков экрана, длинных скриншотов и записи видео в Windows.</Description>
+    <!-- ScreenRecorderLib is C++/CLI: publish a self-contained directory, not a bundle. -->
+    <PublishSingleFile>false</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <!-- WPF owns the process entry point and DPI manifest; Forms is used only for tray/dialogs. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ScreenRecorderLib" Version="7.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Assets\promptix-capture.svg" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
