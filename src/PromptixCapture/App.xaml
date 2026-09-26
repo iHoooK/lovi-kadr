@@ -29,21 +29,21 @@
         <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource Danger}" />
 
         <Style TargetType="Window">
-            <Setter Property="Background" Value="{StaticResource Graphite900Brush}" />
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Setter Property="Background" Value="{DynamicResource Graphite900Brush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
             <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         </Style>
 
         <Style TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
         <Style TargetType="Button">
-            <Setter Property="Foreground" Value="{StaticResource ButtonTextBrush}" />
-            <Setter Property="Background" Value="{StaticResource Graphite700Brush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource Graphite600Brush}" />
+            <Setter Property="Foreground" Value="{DynamicResource ButtonTextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource Graphite700Brush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Graphite600Brush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="14,8" />
             <Setter Property="Cursor" Value="Hand" />
@@ -59,7 +59,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Border" Property="BorderBrush" Value="{StaticResource CyanBrush}" />
+                                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource CyanBrush}" />
                                 <Setter TargetName="Border" Property="Background" Value="#263747" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
@@ -75,29 +75,38 @@
         </Style>
 
         <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Background" Value="{StaticResource CyanBrush}" />
+            <Setter Property="Background" Value="{DynamicResource CyanBrush}" />
             <Setter Property="Foreground" Value="#071118" />
-            <Setter Property="BorderBrush" Value="{StaticResource CyanBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CyanBrush}" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
 
         <Style TargetType="TextBox">
-            <Setter Property="Background" Value="{StaticResource Graphite800Brush}" />
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource Graphite600Brush}" />
+            <Setter Property="Background" Value="{DynamicResource Graphite800Brush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Graphite600Brush}" />
             <Setter Property="Padding" Value="10,7" />
-            <Setter Property="CaretBrush" Value="{StaticResource CyanBrush}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource CyanBrush}" />
         </Style>
 
         <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="{StaticResource Graphite800Brush}" />
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Setter Property="Background" Value="{DynamicResource Graphite800Brush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
             <Setter Property="Padding" Value="8,5" />
         </Style>
 
         <Style TargetType="CheckBox">
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
             <Setter Property="Margin" Value="0,5" />
+        </Style>
+
+        <Style TargetType="ListBox">
+            <Setter Property="Background" Value="{DynamicResource Graphite900Brush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        </Style>
+
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         </Style>
     </Application.Resources>
 </Application>

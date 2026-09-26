@@ -33,10 +33,14 @@ public sealed class AppController : IDisposable
         _settings.Current.General.StartWithWindows=AutostartService.IsEnabled();
         _tray=new Forms.NotifyIcon{Text="ЛовиКадр • снимки и видео",Icon=CreateIcon(),Visible=true};
         BuildMenu();
-        _tray.MouseClick+=(_,e)=>
+        _tray.MouseClick+=async(_,e)=>
         {
             if(e.Button!=Forms.MouseButtons.Left)return;
-            Dispatcher.BeginInvoke(new Action(()=>
+            // The shell still owns the tray callback here.  Showing a WPF window
+            // immediately can race its close and throws WindowInteropHelper's
+            // "Visibility" exception.  Yield until that native callback is gone.
+            await Task.Delay(150);
+            _ = Dispatcher.BeginInvoke(new Action(() =>
             {
                 switch(_settings.Current.General.LeftClickAction){case "Screenshot":_ = Capture(CaptureMode.Region,CapturePurpose.Screenshot);break;case "Settings":ShowSettings();break;default:ShowQuickPanel();break;}
             }));
@@ -133,7 +137,10 @@ public sealed class AppController : IDisposable
             {
                 var picker=new RegionSelectionWindow(image,all);
                 if(picker.ShowDialog()!=true||picker.Result is not {} selection)return;
-                bounds=selection;image=BitmapTools.Crop(image,new Rectangle(bounds.X-all.X,bounds.Y-all.Y,bounds.Width,bounds.Height));
+                // ShowDialog returns before all native close work is necessarily
+                // finished.  Do not show the editor during that closing callback.
+                await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ContextIdle);
+                bounds=selection;image=picker.ExportSelection();
                 switch(picker.Action)
                 {
                     case SelectionAction.Copy:

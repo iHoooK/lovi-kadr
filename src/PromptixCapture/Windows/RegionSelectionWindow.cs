@@ -3,6 +3,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using PromptixCapture.Editor;
+using PromptixCapture.Models;
 using PromptixCapture.Helpers;
 using DRect = System.Drawing.Rectangle;
 
@@ -28,11 +30,14 @@ public sealed class RegionSelectionWindow : Window
         var root=new Grid();root.Children.Add(_surface);
         var toolbar=new Border{Background=new SolidColorBrush(Color.FromArgb(235,21,27,35)),BorderBrush=Ui.Cyan,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Padding=new Thickness(6),HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Bottom,Margin=new Thickness(12)};
         var actions=new StackPanel{Orientation=Orientation.Horizontal};
-        actions.Children.Add(Ui.Button("Копировать",()=>Finish(SelectionAction.Copy),"Ctrl+C"));
-        actions.Children.Add(Ui.Button("Сохранить",()=>Finish(SelectionAction.Save),"Ctrl+S"));
-        actions.Children.Add(Ui.Button("Редактор",()=>Finish(SelectionAction.Editor),"Открыть подробный редактор"));
-        actions.Children.Add(Ui.Button("Готово",()=>Finish(SelectionAction.Confirm),"Enter"));
-        actions.Children.Add(Ui.Button("Отмена",()=>{DialogResult=false;},"Esc"));toolbar.Child=actions;root.Children.Add(toolbar);Content=root;
+        actions.Children.Add(Ui.IconButton("⌖",()=>_surface.SetTool(AnnotationTool.Select),"Выбрать и передвинуть область"));
+        actions.Children.Add(Ui.IconButton("↗",()=>_surface.SetTool(AnnotationTool.Arrow),"Нарисовать стрелку"));
+        actions.Children.Add(Ui.IconButton("╱",()=>_surface.SetTool(AnnotationTool.Line),"Нарисовать линию"));
+        actions.Children.Add(Ui.IconButton("✎",()=>_surface.SetTool(AnnotationTool.Pen),"Рисовать"));
+        actions.Children.Add(Ui.IconButton("⧉",()=>Finish(SelectionAction.Copy),"Копировать · Ctrl+C"));
+        actions.Children.Add(Ui.IconButton("▣",()=>Finish(SelectionAction.Editor),"Открыть в редакторе"));
+        actions.Children.Add(Ui.IconButton("✓",()=>Finish(SelectionAction.Confirm),"Готово · Enter"));
+        actions.Children.Add(Ui.IconButton("×",()=>{DialogResult=false;},"Отмена · Esc"));toolbar.Child=actions;root.Children.Add(toolbar);Content=root;
         SourceInitialized += (_, _) => NativeMethods.PlacePixels(this, desktop);
         Loaded += (_, _) => { NativeMethods.PlacePixels(this, desktop); Activate(); Focus(); };
         KeyDown += (_, e) =>
@@ -57,11 +62,15 @@ public sealed class RegionSelectionWindow : Window
         if(_surface.Selection.Width<=2 || _surface.Selection.Height<=2)return;
         Action=action;Result=_surface.PixelRectangle();DialogResult=true;
     }
+    public BitmapSource ExportSelection()=>_surface.ExportSelection();
 
     private sealed class SelectionSurface : FrameworkElement
     {
         private readonly BitmapSource _image;
         private readonly DRect _desktop;
+        private readonly List<AnnotationModel> _annotations=new();
+        private AnnotationModel? _annotationDraft;
+        private AnnotationTool _tool=AnnotationTool.Select;
         public Rect Selection { get; private set; }
         private Point _start;
         private Rect _before;
@@ -72,7 +81,7 @@ public sealed class RegionSelectionWindow : Window
             if (previous is { } p && desktop.Contains(p)) Selection = new Rect(p.X - desktop.X, p.Y - desktop.Y, p.Width, p.Height);
             MouseLeftButtonDown += Down;
             MouseMove += Drag;
-            MouseLeftButtonUp += (_, e) => { ReleaseMouseCapture(); UpdateCursor(PixelPoint(e)); };
+            MouseLeftButtonUp += (_, e) => { _annotationDraft=null;ReleaseMouseCapture(); UpdateCursor(PixelPoint(e)); };
         }
         private Point PixelPoint(MouseEventArgs e) { var p = e.GetPosition(this); return new Point(p.X * _desktop.Width / ActualWidth, p.Y * _desktop.Height / ActualHeight); }
         private IEnumerable<Point> Handles()
@@ -85,6 +94,13 @@ public sealed class RegionSelectionWindow : Window
         private void Down(object sender, MouseButtonEventArgs e)
         {
             _start = PixelPoint(e); _before = Selection; _drag = 0;
+            if(_tool!=AnnotationTool.Select)
+            {
+                if(Selection.Width<=2||Selection.Height<=2)return;
+                _annotationDraft=new AnnotationModel{Tool=_tool,Start=_start,End=_start,Color=Colors.OrangeRed,Thickness=4};
+                if(_tool==AnnotationTool.Pen)_annotationDraft.Points.Add(_start);
+                _annotations.Add(_annotationDraft);CaptureMouse();InvalidateVisual();return;
+            }
             if (Selection.Width > 0)
             {
                 int i = 0; foreach (var p in Handles()) { if ((p - _start).Length < 12) { _drag = i + 2; break; } i++; }
@@ -114,11 +130,17 @@ public sealed class RegionSelectionWindow : Window
         {
             if (!IsMouseCaptured){UpdateCursor(PixelPoint(e));return;}
             var p = PixelPoint(e); p.X = Math.Clamp(p.X, 0, _desktop.Width); p.Y = Math.Clamp(p.Y, 0, _desktop.Height);
+            if(_annotationDraft is not null)
+            {
+                _annotationDraft.End=p;if(_annotationDraft.Tool==AnnotationTool.Pen)_annotationDraft.Points.Add(p);InvalidateVisual();return;
+            }
             var d = p - _start;
             if (_drag == 0) Selection = new Rect(_start, p);
             else if (_drag == 1)
             {
-                Selection = new Rect(Math.Clamp(_before.X + d.X, 0, Math.Max(0, _desktop.Width - _before.Width)), Math.Clamp(_before.Y + d.Y, 0, Math.Max(0,_desktop.Height - _before.Height)), _before.Width, _before.Height);
+                var moved=new Point(Math.Clamp(_before.X + d.X, 0, Math.Max(0, _desktop.Width - _before.Width)), Math.Clamp(_before.Y + d.Y, 0, Math.Max(0,_desktop.Height - _before.Height)));
+                var delta=moved-_before.TopLeft;foreach(var annotation in _annotations)annotation.Translate(delta);
+                _before=new Rect(moved,_before.Size);_start=p;Selection=_before;
             }
             else
             {
@@ -134,10 +156,19 @@ public sealed class RegionSelectionWindow : Window
         public void Move(int x, int y)
         {
             var r = Selection;
-            Selection = new Rect(Math.Clamp(r.X+x,0,Math.Max(0,_desktop.Width-r.Width)),Math.Clamp(r.Y+y,0,Math.Max(0,_desktop.Height-r.Height)),r.Width,r.Height);
+            var moved=new Rect(Math.Clamp(r.X+x,0,Math.Max(0,_desktop.Width-r.Width)),Math.Clamp(r.Y+y,0,Math.Max(0,_desktop.Height-r.Height)),r.Width,r.Height);
+            var delta=moved.TopLeft-r.TopLeft;foreach(var annotation in _annotations)annotation.Translate(delta);Selection=moved;
             InvalidateVisual();
         }
+        public void SetTool(AnnotationTool tool){_tool=tool;Cursor=tool==AnnotationTool.Select?Cursors.Cross:Cursors.Pen;}
         public DRect PixelRectangle() => new(_desktop.X+(int)Selection.X,_desktop.Y+(int)Selection.Y,Math.Max(1,(int)Selection.Width),Math.Max(1,(int)Selection.Height));
+        public BitmapSource ExportSelection()
+        {
+            var crop=BitmapTools.Crop(_image,new System.Drawing.Rectangle((int)Selection.X,(int)Selection.Y,Math.Max(1,(int)Selection.Width),Math.Max(1,(int)Selection.Height)));
+            var document=new AnnotationDocument(crop);
+            foreach(var annotation in _annotations){var copy=annotation.Clone();copy.Translate(new Vector(-Selection.X,-Selection.Y));document.Items.Add(copy);}
+            return new AnnotationCanvas(document).Export();
+        }
         protected override void OnRender(DrawingContext dc)
         {
             base.OnRender(dc);
@@ -148,12 +179,22 @@ public sealed class RegionSelectionWindow : Window
             var mask = new CombinedGeometry(GeometryCombineMode.Exclude,new RectangleGeometry(new Rect(0,0,_desktop.Width,_desktop.Height)),new RectangleGeometry(Selection));
             dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(155,0,0,0)),null,mask);
             dc.DrawRectangle(null,new Pen(Brushes.DeepSkyBlue,2),Selection);
+            foreach(var annotation in _annotations)DrawQuickAnnotation(dc,annotation);
             if (Selection.Width > 0) foreach (var p in Handles()) dc.DrawRectangle(Brushes.White,new Pen(Brushes.DeepSkyBlue,1),new Rect(p.X-4,p.Y-4,8,8));
             var label = $"{(int)Selection.Width} × {(int)Selection.Height}  •  Enter / двойной щелчок — готово  •  Esc — отмена";
             var ft = new FormattedText(label,System.Globalization.CultureInfo.CurrentCulture,FlowDirection.LeftToRight,new Typeface("Segoe UI"),16,Brushes.White,1);
             var pos = new Point(Math.Clamp(Selection.X, 10, Math.Max(10,_desktop.Width-ft.Width-20)),Math.Max(12,Selection.Y-40));
             dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(13,17,23)),null,new Rect(pos.X-8,pos.Y-6,ft.Width+16,ft.Height+12),8,8);
             dc.DrawText(ft,pos); dc.Pop();
+        }
+        private static void DrawQuickAnnotation(DrawingContext dc,AnnotationModel annotation)
+        {
+            var pen=new Pen(new SolidColorBrush(annotation.Color),annotation.Thickness){StartLineCap=PenLineCap.Round,EndLineCap=PenLineCap.Round,LineJoin=PenLineJoin.Round};
+            if(annotation.Tool==AnnotationTool.Pen && annotation.Points.Count>1)
+            {var path=new StreamGeometry();using var context=path.Open();context.BeginFigure(annotation.Points[0],false,false);context.PolyLineTo(annotation.Points.Skip(1).ToArray(),true,false);dc.DrawGeometry(null,pen,path);return;}
+            dc.DrawLine(pen,annotation.Start,annotation.End);
+            if(annotation.Tool==AnnotationTool.Arrow && (annotation.End-annotation.Start).Length>1)
+            {var vector=annotation.End-annotation.Start;vector.Normalize();var side=new Vector(-vector.Y,vector.X);var size=Math.Max(12,annotation.Thickness*4);dc.DrawLine(pen,annotation.End,annotation.End-vector*size+side*size*.5);dc.DrawLine(pen,annotation.End,annotation.End-vector*size-side*size*.5);}
         }
     }
 }

@@ -10,6 +10,7 @@ namespace PromptixCapture.Windows;
 public sealed class SettingsWindow : Window
 {
     private AppSettings _draft;
+    private string _savedTheme;
     private readonly Action<AppSettings> _save;
     private readonly List<Action> _readers=new();
     private readonly StackPanel _page=new(){Margin=new Thickness(26,12,26,20)};
@@ -17,16 +18,16 @@ public sealed class SettingsWindow : Window
     private int _current=-1;
     public SettingsWindow(AppSettings settings,Action<AppSettings> save,int tab=0)
     {
-        _draft=LocalData.Clone(settings);_save=save;
+        _draft=LocalData.Clone(settings);_savedTheme=_draft.General.Theme;_save=save;
         Title="ЛовиКадр — настройки";Width=930;Height=720;MinWidth=760;MinHeight=560;WindowStartupLocation=WindowStartupLocation.CenterScreen;
         var root=new DockPanel();Content=root;
         var header=new StackPanel{Margin=new Thickness(24,18,20,4)};DockPanel.SetDock(header,Dock.Top);root.Children.Add(header);
         header.Children.Add(Ui.Text("ЛОВИ-КАДР",24));header.Children.Add(Ui.Text("Снимки. Видео. Длинные страницы. Всё на вашем компьютере.",13,true));
         var footer=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(16)};DockPanel.SetDock(footer,Dock.Bottom);root.Children.Add(footer);
         footer.Children.Add(Ui.Button("По умолчанию",()=>{if(MessageBox.Show(this,"Сбросить все поля? Изменения сохранятся только после «Сохранить».","Настройки",MessageBoxButton.YesNo)==MessageBoxResult.Yes){_draft=AppSettings.CreateDefault();_readers.Clear();Build(_current);}}));
-        footer.Children.Add(Ui.Button("Отмена",Close));footer.Children.Add(Ui.Button("Сохранить",()=>
+        footer.Children.Add(Ui.Button("Отмена",()=>{Ui.ApplyTheme(_savedTheme);Close();}));footer.Children.Add(Ui.Button("Сохранить",()=>
         {
-            try{Read();SettingsService.Validate(_draft);ValidateHotkeys();_save(_draft);Close();}catch(Exception ex){Ui.Error(ex);}
+            try{Read();SettingsService.Validate(_draft);ValidateHotkeys();_save(_draft);_savedTheme=_draft.General.Theme;Title="ЛовиКадр — настройки • сохранено";}catch(Exception ex){Ui.Error(ex);}
         }));
         foreach(var title in new[]{"Общие","Горячие клавиши","Скриншоты","Длинный снимок","Видео","О программе"})_nav.Items.Add(new ListBoxItem{Content=title,Padding=new Thickness(13,12,13,12),Margin=new Thickness(0,3,0,3)});
         DockPanel.SetDock(_nav,Dock.Left);root.Children.Add(_nav);
@@ -36,6 +37,9 @@ public sealed class SettingsWindow : Window
             if(_nav.SelectedIndex==_current)return;
             try{Read();Build(_nav.SelectedIndex);}catch(Exception ex){Ui.Error(ex);_nav.SelectedIndex=_current;}
         };
+        // Theme choice is previewed immediately, but closing without a later
+        // save must leave the rest of the application on the saved theme.
+        Closed+=(_,_)=>Ui.ApplyTheme(_savedTheme);
         _nav.SelectedIndex=tab;
     }
     private void Read(){foreach(var read in _readers)read();}
@@ -57,7 +61,7 @@ public sealed class SettingsWindow : Window
                 Check("Показывать уведомления",_draft.General.ShowNotifications,v=>_draft.General.ShowNotifications=v);
                 Check("Звук после быстрого снимка",_draft.General.PlaySounds,v=>_draft.General.PlaySounds=v);
                 Check("Тихий режим (без звуков и уведомлений)",_draft.General.QuietMode,v=>_draft.General.QuietMode=v);
-                Choice("Тема",new[]{"Системная","Светлая","Тёмная"},_draft.General.Theme switch{"Light"=>"Светлая","Dark"=>"Тёмная",_=>"Системная"},v=>_draft.General.Theme=v switch{"Светлая"=>"Light","Тёмная"=>"Dark",_=>"System"});
+                Choice("Тема",new[]{"Системная","Светлая","Тёмная"},_draft.General.Theme switch{"Light"=>"Светлая","Dark"=>"Тёмная",_=>"Системная"},v=>_draft.General.Theme=v switch{"Светлая"=>"Light","Тёмная"=>"Dark",_=>"System"},()=>Ui.ApplyTheme(_draft.General.Theme));
                 Choice("Левый щелчок по значку",new[]{"Быстрая панель","Снимок области","Настройки"},_draft.General.LeftClickAction switch{"Screenshot"=>"Снимок области","Settings"=>"Настройки",_=>"Быстрая панель"},v=>_draft.General.LeftClickAction=v switch{"Снимок области"=>"Screenshot","Настройки"=>"Settings",_=>"QuickPanel"});
                 _page.Children.Add(Ui.Button("Открыть папку служебных данных",()=>{Directory.CreateDirectory(LocalData.Folder);Ui.Open(LocalData.Folder);}));
                 Note("Автозапуск привязан к пути EXE. Сначала переместите portable-сборку в постоянную папку. Никакие данные не отправляются в сеть.");break;
@@ -125,8 +129,13 @@ public sealed class SettingsWindow : Window
     }
     private void Number(string label,int value,Action<int> setter)=>Input(label,value.ToString(),s=>{if(!int.TryParse(s,out var n))throw new ArgumentException(label+": введите целое число.");setter(n);});
     private void Check(string label,bool value,Action<bool> setter){var c=new CheckBox{Content=label,IsChecked=value,Foreground=Ui.TextPrimary,Margin=new Thickness(3,9,3,9)};_page.Children.Add(c);_readers.Add(()=>setter(c.IsChecked==true));}
-    private void Choice<T>(string label,IEnumerable<T> values,T current,Action<T> setter)
-    { _page.Children.Add(Ui.Text(label,13));var c=new ComboBox{ItemsSource=values.ToArray(),SelectedItem=current,Margin=new Thickness(3,0,3,8)};_page.Children.Add(c);_readers.Add(()=>{if(c.SelectedItem is T v)setter(v);}); }
+    private void Choice<T>(string label,IEnumerable<T> values,T current,Action<T> setter,Action? changed=null)
+    {
+        _page.Children.Add(Ui.Text(label,13));var c=new ComboBox{ItemsSource=values.ToArray(),SelectedItem=current,Margin=new Thickness(3,0,3,8)};_page.Children.Add(c);
+        void ReadChoice(){if(c.SelectedItem is T v)setter(v);}
+        _readers.Add(ReadChoice);
+        if(changed is not null)c.SelectionChanged+=(_,_)=>{ReadChoice();changed();};
+    }
     private void Folder(string label,string path,Action<string> setter)
     {
         var box=Input(label,path,setter);_page.Children.Add(Ui.Button("Обзор…",()=>{using var d=new System.Windows.Forms.FolderBrowserDialog{SelectedPath=box.Text,ShowNewFolderButton=true};if(d.ShowDialog()==System.Windows.Forms.DialogResult.OK)box.Text=d.SelectedPath;}));

@@ -17,7 +17,11 @@ internal static class Ui
         var colors=dark
             ? new Dictionary<string,Color>{{"Graphite900Brush",Color.FromRgb(13,17,23)},{"Graphite800Brush",Color.FromRgb(21,27,35)},{"Graphite700Brush",Color.FromRgb(32,41,54)},{"Graphite600Brush",Color.FromRgb(52,65,84)},{"TextPrimaryBrush",Color.FromRgb(244,247,251)},{"TextSecondaryBrush",Color.FromRgb(169,182,199)},{"ButtonTextBrush",Color.FromRgb(244,247,251)}}
             : new Dictionary<string,Color>{{"Graphite900Brush",Color.FromRgb(247,249,252)},{"Graphite800Brush",Colors.White},{"Graphite700Brush",Color.FromRgb(32,41,54)},{"Graphite600Brush",Color.FromRgb(52,65,84)},{"TextPrimaryBrush",Color.FromRgb(24,34,48)},{"TextSecondaryBrush",Color.FromRgb(82,102,127)},{"ButtonTextBrush",Color.FromRgb(244,247,251)}};
-        foreach(var pair in colors)if(Application.Current.Resources[pair.Key] is SolidColorBrush brush)brush.Color=pair.Value;
+        // Brushes declared in XAML may be frozen once WPF seals the resource/style
+        // graph. Updating Color on such a brush throws "read-only state" during
+        // startup. Replacing the resource is safe and lets DynamicResource users
+        // pick up the new value.
+        foreach(var pair in colors)Application.Current.Resources[pair.Key]=new SolidColorBrush(pair.Value);
         TextPrimary.Color=colors["TextPrimaryBrush"];Muted.Color=colors["TextSecondaryBrush"];
     }
     private static bool SystemPrefersDark()
@@ -28,6 +32,12 @@ internal static class Ui
     internal static Button Button(string text,Action action,string? tip=null)
     {
         var button=new Button{Content=text,Margin=new Thickness(3),MinHeight=36,ToolTip=tip??text};button.Click+=(_,_)=>action();return button;
+    }
+    internal static Button IconButton(string icon,Action action,string tip)
+    {
+        var button=new Button{Content=new TextBlock{Text=icon,FontSize=20,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center},
+            Width=42,Height=38,MinHeight=38,Padding=new Thickness(0),Margin=new Thickness(3),ToolTip=tip};
+        button.Click+=(_,_)=>action();return button;
     }
     internal static Button AsyncButton(string text,Func<Task> action,string? tip=null)
     {

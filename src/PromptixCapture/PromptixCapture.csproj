@@ -4,6 +4,9 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- `dotnet run` defaults to AnyCPU outside the .sln. ScreenRecorderLib
+         requires a concrete architecture, so local runs default to x64. -->
+    <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">x64</Platform>
     <ImplicitUsings>disable</ImplicitUsings>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <RootNamespace>PromptixCapture</RootNamespace>
