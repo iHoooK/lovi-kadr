@@ -6,6 +6,7 @@ using PromptixCapture.Helpers;
 using PromptixCapture.Models;
 using PromptixCapture.Services;
 using PromptixCapture.Windows;
+using PromptixCapture.Editor;
 using Forms=System.Windows.Forms;
 using WpfApplication=System.Windows.Application;
 
@@ -21,14 +22,15 @@ public sealed class AppController : IDisposable
     private Forms.NotifyIcon? _tray;
     private SettingsWindow? _settingsWindow;
     private Window? _quickPanel;
-    private RecordingWindow? _recording;
-    private ScrollingWindow? _scrolling;
+    private RegionSelectionWindow? _recording;
+    private RegionSelectionWindow? _scrolling;
     private bool _capturing;
     private Dispatcher Dispatcher=>WpfApplication.Current.Dispatcher;
     public void Initialize(string[] args)
     {
         bool first=!File.Exists(Path.Combine(LocalData.Folder,"settings.json"));
         _settings.Load();Ui.ApplyTheme(_settings.Current.General.Theme);_history.Load();
+        AppNotifications.Configure(()=>_settings.Current.General);
         if(typeof(HotkeySettings).GetProperties().Select(p=>p.GetValue(_settings.Current.Hotkeys) as string).Any(v=>v?.Contains("PrintScreen",StringComparison.OrdinalIgnoreCase)==true))_printScreenSnipping.DisableForThisSession();
         _settings.Current.General.StartWithWindows=AutostartService.IsEnabled();
         _tray=new Forms.NotifyIcon{Text="ЛовиКадр • снимки и видео",Icon=CreateIcon(),Visible=true};
@@ -36,13 +38,14 @@ public sealed class AppController : IDisposable
         _tray.MouseClick+=async(_,e)=>
         {
             if(e.Button!=Forms.MouseButtons.Left)return;
+            var click=NativeMethods.CursorPosition;
             // The shell still owns the tray callback here.  Showing a WPF window
             // immediately can race its close and throws WindowInteropHelper's
             // "Visibility" exception.  Yield until that native callback is gone.
             await Task.Delay(150);
             _ = Dispatcher.BeginInvoke(new Action(() =>
             {
-                switch(_settings.Current.General.LeftClickAction){case "Screenshot":_ = Capture(CaptureMode.Region,CapturePurpose.Screenshot);break;case "Settings":ShowSettings();break;default:ShowQuickPanel();break;}
+                switch(_settings.Current.General.LeftClickAction){case "Screenshot":_ = Capture(CaptureMode.Region,CapturePurpose.Screenshot);break;case "Settings":ShowSettings();break;default:ShowQuickPanel(click);break;}
             }));
         };
         _tray.DoubleClick+=(_,_)=>Dispatcher.BeginInvoke(new Action(()=>ShowSettings()));
@@ -51,7 +54,7 @@ public sealed class AppController : IDisposable
         {
             switch(action)
             {
-                case "VideoStartStop":if(_recording is not null)_recording.Stop();else _=Capture(CaptureMode.Region,CapturePurpose.Video);break;
+                case "VideoStartStop":if(_recording is not null)_recording.StartOrStop();else _=Capture(CaptureMode.Region,CapturePurpose.Video);break;
                 case "VideoPauseResume":_recording?.TogglePause();break;
                 case "ScrollingScreenshot":if(_scrolling is not null)_scrolling.Stop();else _=Capture(CaptureMode.Region,CapturePurpose.ScrollingScreenshot);break;
                 default:if(Enum.TryParse<CaptureMode>(action,out var mode))_=Capture(mode,CapturePurpose.Screenshot);break;
@@ -76,7 +79,7 @@ public sealed class AppController : IDisposable
         }
         Add("Снимок области",()=>_=Capture(CaptureMode.Region,CapturePurpose.Screenshot));
         Add("Снимок последней области",()=>_=Capture(CaptureMode.LastRegion,CapturePurpose.Screenshot));
-        Add("Запись / стоп видео",()=>{if(_recording is not null)_recording.Stop();else _=Capture(CaptureMode.Region,CapturePurpose.Video);});
+        Add("Запись / стоп видео",()=>{if(_recording is not null)_recording.StartOrStop();else _=Capture(CaptureMode.Region,CapturePurpose.Video);});
         Add("Длинный снимок / стоп",()=>{if(_scrolling is not null)_scrolling.Stop();else _=Capture(CaptureMode.Region,CapturePurpose.ScrollingScreenshot);});
         menu.Items.Add(new Forms.ToolStripSeparator());
         Add("История",()=>new HistoryWindow(_history).Show());
@@ -88,7 +91,7 @@ public sealed class AppController : IDisposable
     }
     private void ShowSettings(int tab=0)
     {
-        _quickPanel?.Close();
+        CloseQuickPanel();
         if(_settingsWindow is not null){_settingsWindow.Activate();return;}
         _settingsWindow=new SettingsWindow(_settings.Current,settings=>
         {
@@ -96,23 +99,57 @@ public sealed class AppController : IDisposable
             _settings.Save(settings);Ui.ApplyTheme(settings.General.Theme);
             if(typeof(HotkeySettings).GetProperties().Select(p=>p.GetValue(settings.Hotkeys) as string).Any(v=>v?.Contains("PrintScreen",StringComparison.OrdinalIgnoreCase)==true))_printScreenSnipping.DisableForThisSession();
             ReportHotkeys(_hotkeys.Register(settings.Hotkeys));BuildMenu();
-        },tab);
+        },tab,()=>new HistoryWindow(_history,true).Show());
         _settingsWindow.Closed+=(_,_)=>_settingsWindow=null;_settingsWindow.Show();
     }
     private void ReportHotkeys(List<string> errors)
     {if(errors.Count>0)Dispatcher.BeginInvoke(new Action(()=>MessageBox.Show(string.Join("\n",errors)+"\n\nИзмените сочетания в настройках. Для Print Screen можно отключить запуск Ножниц в параметрах Windows.","Горячие клавиши",MessageBoxButton.OK,MessageBoxImage.Warning)));}
-    private void ShowQuickPanel()
+    private void ShowQuickPanel(System.Drawing.Point? click=null)
     {
-        if(_quickPanel is not null){_quickPanel.Close();return;}
-        var window=new Window{Title="ЛовиКадр",Width=465,Height=150,WindowStyle=WindowStyle.ToolWindow,ResizeMode=ResizeMode.NoResize,ShowInTaskbar=false,Topmost=true};
-        var panel=new StackPanel{Margin=new Thickness(12)};panel.Children.Add(Ui.Text("ЧТО ЗАХВАТИМ?",13,true));var row=new StackPanel{Orientation=Orientation.Horizontal};panel.Children.Add(row);
-        row.Children.Add(Ui.Button("Снимок",()=>_=Capture(CaptureMode.Region,CapturePurpose.Screenshot)));
-        row.Children.Add(Ui.Button("Видео",()=>{if(_recording is not null)_recording.Stop();else _=Capture(CaptureMode.Region,CapturePurpose.Video);}));
-        row.Children.Add(Ui.Button("Длинный",()=>_=Capture(CaptureMode.Region,CapturePurpose.ScrollingScreenshot)));
-        row.Children.Add(Ui.Button("Ещё",()=>{window.Close();_tray?.ContextMenuStrip?.Show(Forms.Cursor.Position);}));window.Content=panel;
-        window.KeyDown+=(_,e)=>{if(e.Key==System.Windows.Input.Key.Escape)window.Close();};
-        window.Loaded+=(_,_)=>{var work=Forms.Screen.FromPoint(NativeMethods.CursorPosition).WorkingArea;NativeMethods.PlacePixels(window,new Rectangle(work.Right-480,work.Bottom-165,465,150));};
-        window.Deactivated+=(_,_)=>window.Close();window.Closed+=(_,_)=>_quickPanel=null;_quickPanel=window;window.Show();window.Activate();
+        if(_quickPanel is not null){CloseQuickPanel();return;}
+        var window=new Window{Title="ЛовиКадр",Width=164,Height=60,WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,ShowInTaskbar=false,Topmost=true};
+        Ui.ThemeWindow(window);
+        var row=CreateQuickPanelActions(
+            ()=>_=Capture(CaptureMode.Region,CapturePurpose.Screenshot),
+            ()=>{if(_recording is not null)_recording.StartOrStop();else _=Capture(CaptureMode.Region,CapturePurpose.Video);},
+            ()=>_=Capture(CaptureMode.Region,CapturePurpose.ScrollingScreenshot));
+        window.Content=new Border{Child=row,Padding=new Thickness(8),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(8)};
+        ((Border)window.Content).SetResourceReference(Border.BackgroundProperty,"SurfaceBrush");
+        ((Border)window.Content).SetResourceReference(Border.BorderBrushProperty,"BorderBrush");
+        window.KeyDown+=(_,e)=>{if(e.Key==System.Windows.Input.Key.Escape)CloseQuickPanel();};
+        window.Loaded+=(_,_)=>
+        {
+            var anchor=click??NativeMethods.CursorPosition;
+            var work=Forms.Screen.FromPoint(anchor).WorkingArea;
+            NativeMethods.PlacePixels(window,QuickPanelBounds(anchor,work,new System.Drawing.Size(164,60)));
+        };
+        window.Closing+=(_,_)=>{if(ReferenceEquals(_quickPanel,window))_quickPanel=null;};
+        window.Deactivated+=(_,_)=>{if(ReferenceEquals(_quickPanel,window))CloseQuickPanel();};
+        window.Closed+=(_,_)=>{if(ReferenceEquals(_quickPanel,window))_quickPanel=null;};
+        _quickPanel=window;window.Show();window.Activate();
+    }
+    internal static Rectangle QuickPanelBounds(System.Drawing.Point anchor,Rectangle work,System.Drawing.Size size)
+    {
+        int x=Math.Clamp(anchor.X-size.Width/2,work.Left,work.Right-size.Width);
+        int y=anchor.Y<work.Top?work.Top+8:anchor.Y>=work.Bottom?work.Bottom-size.Height-8:anchor.Y-size.Height-12;
+        return new Rectangle(x,Math.Clamp(y,work.Top,work.Bottom-size.Height),size.Width,size.Height);
+    }
+    private void CloseQuickPanel()
+    {
+        var window=_quickPanel;
+        if(window is null)return;
+        // Deactivated can fire while Close is in progress. Release this window
+        // first so that the event cannot close it a second time.
+        _quickPanel=null;
+        window.Close();
+    }
+    internal static StackPanel CreateQuickPanelActions(Action screenshot,Action video,Action scrolling)
+    {
+        var row=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};
+        row.Children.Add(Ui.ActionIconButton("screenshot",screenshot,"Снимок области"));
+        row.Children.Add(Ui.ActionIconButton("video",video,"Видео"));
+        row.Children.Add(Ui.ActionIconButton("scroll",scrolling,"Длинный снимок"));
+        return row;
     }
     private async Task Capture(CaptureMode mode,CapturePurpose purpose)
     {
@@ -122,7 +159,7 @@ public sealed class AppController : IDisposable
         var active=NativeMethods.GetForegroundWindow();var cursor=NativeMethods.CursorPosition;
         try
         {
-            _quickPanel?.Close();await Task.Delay(120);
+            CloseQuickPanel();await Task.Delay(120);
             var all=CaptureService.Desktop;var bounds=mode switch
             {
                 CaptureMode.ActiveWindow=>CaptureService.ActiveWindow(active),
@@ -132,67 +169,69 @@ public sealed class AppController : IDisposable
             };
             bounds=Rectangle.Intersect(bounds,all);
             if(bounds.Width<1||bounds.Height<1)throw new InvalidOperationException("Последняя область больше не находится на подключённом мониторе.");
+            if(purpose==CapturePurpose.Video)
+            {
+                var picker=new RegionSelectionWindow(null,all,purpose,LocalData.Clone(_settings.Current.Video),history:_history);
+                _recording=picker;
+                picker.Finished+=()=>{if(ReferenceEquals(_recording,picker))_recording=null;};
+                picker.Show();return;
+            }
             var image=await _capture.CaptureAsync(bounds,purpose==CapturePurpose.Screenshot && _settings.Current.Screenshot.IncludeCursor);
             if(mode==CaptureMode.Region)
             {
-                var picker=new RegionSelectionWindow(image,all);
-                if(picker.ShowDialog()!=true||picker.Result is not {} selection)return;
-                // ShowDialog returns before all native close work is necessarily
-                // finished.  Do not show the editor during that closing callback.
+                var picker=new RegionSelectionWindow(image,all,purpose,_settings.Current.Video,capture:purpose==CapturePurpose.ScrollingScreenshot?_capture:null,scrolling:_settings.Current.Scrolling);
+                if(purpose==CapturePurpose.ScrollingScreenshot)_scrolling=picker;
+                bool accepted;
+                try{accepted=picker.ShowDialog()==true;}
+                finally{if(ReferenceEquals(_scrolling,picker))_scrolling=null;}
+                if(!accepted)return;
+                // Let the selection overlay finish closing before writing to
+                // the clipboard, so its window no longer covers other apps.
                 await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ContextIdle);
-                bounds=selection;image=picker.ExportSelection();
-                switch(picker.Action)
+                if(purpose==CapturePurpose.ScrollingScreenshot && picker.ScrollingResult is {} scrollResult)
+                {
+                    var document=new AnnotationDocument(scrollResult.Image);
+                    foreach(var mark in picker.ExportAnnotations())
+                    {
+                        mark.Translate(new System.Windows.Vector(-scrollResult.SourceCrop.X,-scrollResult.SourceCrop.Y));
+                        document.Items.Add(mark);
+                    }
+                    var output=document.Items.Count==0?scrollResult.Image:new AnnotationCanvas(document).Export();
+                    await ImageExportService.CopyAsync(output);
+                    Notify("Длинный снимок скопирован в буфер обмена");
+                    return;
+                }
+                if(picker.Result is not {} selection)return;
+                bounds=selection;
+                if(purpose==CapturePurpose.Screenshot)switch(picker.Action)
                 {
                     case SelectionAction.Copy:
+                        image=picker.ExportSelection();
                         await ImageExportService.CopyAsync(image);Notify("Снимок скопирован в буфер обмена");return;
                     case SelectionAction.Save:
+                        image=picker.ExportSelection();
                         SaveScreenshot(image,HistoryMediaType.Screenshot);return;
                     case SelectionAction.Editor:
-                        new EditorWindow(image,_settings.Current.Screenshot,_history,HistoryMediaType.Screenshot).Show();return;
+                        new EditorWindow(picker.ExportDocument(),_settings.Current.Screenshot,_history,HistoryMediaType.Screenshot).Show();return;
                 }
+                if(purpose==CapturePurpose.Screenshot)image=picker.ExportSelection();
             }
             if(purpose!=CapturePurpose.Screenshot && !Forms.Screen.AllScreens.Any(s=>s.Bounds.Contains(bounds)))throw new InvalidOperationException("Для видео и длинного снимка выделите область внутри одного монитора.");
-            if(purpose==CapturePurpose.Video)
-            {
-                var video=LocalData.Clone(_settings.Current.Video);
-                if(!ConfirmRecording(video))return;
-                _recording=new RecordingWindow(bounds,video,_history);_recording.Finished+=()=>_recording=null;_recording.Show();
-            }
-            else if(purpose==CapturePurpose.ScrollingScreenshot)
-            {
-                _scrolling=new ScrollingWindow(_capture,bounds,_settings.Current.Scrolling);
-                if(_scrolling.ShowDialog()==true && _scrolling.Result is {} result)
-                {
-                    Notify(result.Reason);
-                    await Present(result.Image,HistoryMediaType.ScrollingScreenshot,_settings.Current.Scrolling.OpenEditor);
-                }
-                _scrolling=null;
-            }
+            if(purpose==CapturePurpose.ScrollingScreenshot)throw new InvalidOperationException("Для длинного снимка выделите область экрана.");
             else await Present(image,HistoryMediaType.Screenshot,_settings.Current.Screenshot.OpenEditor);
         }
         catch(Exception ex){Ui.Error(ex);_scrolling=null;}
         finally{_capturing=false;}
     }
-    private bool ConfirmRecording(VideoSettings video)
-    {
-        var dialog=new Window{Title="Настройки этой записи",Width=470,Height=300,WindowStartupLocation=WindowStartupLocation.CenterScreen,ResizeMode=ResizeMode.NoResize};
-        var panel=new StackPanel{Margin=new Thickness(20)};panel.Children.Add(Ui.Text("Перед началом записи",22));
-        var system=new CheckBox{Content="Системный звук",IsChecked=video.CaptureSystemAudio};var mic=new CheckBox{Content="Микрофон",IsChecked=video.CaptureMicrophone};var cursor=new CheckBox{Content="Показывать курсор",IsChecked=video.IncludeCursor};
-        panel.Children.Add(system);panel.Children.Add(mic);panel.Children.Add(cursor);panel.Children.Add(Ui.Text($"{video.FramesPerSecond} FPS • отсчёт {video.CountdownSeconds} с • MP4",12,true));
-        var row=new StackPanel{Orientation=Orientation.Horizontal};row.Children.Add(Ui.Button("Отмена",()=>dialog.DialogResult=false));row.Children.Add(Ui.Button("Начать запись",()=>dialog.DialogResult=true));panel.Children.Add(row);dialog.Content=panel;
-        if(dialog.ShowDialog()!=true)return false;video.CaptureSystemAudio=system.IsChecked==true;video.CaptureMicrophone=mic.IsChecked==true;video.IncludeCursor=cursor.IsChecked==true;return true;
-    }
     private async Task Present(System.Windows.Media.Imaging.BitmapSource image,HistoryMediaType type,bool editor)
     {
         var settings=_settings.Current.Screenshot;
         if(editor){new EditorWindow(image,settings,_history,type).Show();return;}
-        if(settings.CopyToClipboard)await ImageExportService.CopyAsync(image);
+        if(settings.CopyToClipboard){await ImageExportService.CopyAsync(image);Notify("Снимок скопирован в буфер обмена");}
         if(settings.AutoSave || !settings.CopyToClipboard)
         {
             SaveScreenshot(image,type);
         }
-        Notify("Снимок готов"+(_capture.LastBackend.StartsWith("GDI")?" • резервный GDI-захват":""));
-        if(_settings.Current.General.PlaySounds&&!_settings.Current.General.QuietMode)System.Media.SystemSounds.Asterisk.Play();
     }
     private bool EnsureScreenshotFolder(ScreenshotSettings settings)
     {
@@ -207,10 +246,10 @@ public sealed class AppController : IDisposable
         if(!EnsureScreenshotFolder(settings))return;
         var path=ImageExportService.DefaultPath(image,settings);ImageExportService.Save(image,path,settings.JpegQuality);
         _history.Add(new HistoryItem{Path=path,Type=type,Width=image.PixelWidth,Height=image.PixelHeight});
-        Notify("Снимок сохранён: "+Path.GetFileName(path));
+        Notify((type==HistoryMediaType.ScrollingScreenshot?"Длинный снимок сохранён: ":"Снимок сохранён: ")+Path.GetFileName(path));
     }
     private void Notify(string text)
-    {if(_settings.Current.General.ShowNotifications&&!_settings.Current.General.QuietMode)_tray?.ShowBalloonTip(2500,"ЛовиКадр",text,Forms.ToolTipIcon.Info);}
+    {AppNotifications.Show(text);}
     private void Exit()
     {
         if(_recording is not null||_scrolling is not null){MessageBox.Show("Сначала остановите запись и дождитесь сохранения файла.","ЛовиКадр");return;}

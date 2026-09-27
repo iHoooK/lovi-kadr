@@ -9,18 +9,22 @@ namespace PromptixCapture.Windows;
 
 public sealed class HistoryWindow : Window
 {
-    public HistoryWindow(HistoryService history)
+    internal static IEnumerable<HistoryItem> RecentScreenshots(IEnumerable<HistoryItem> items)=>
+        items.Where(i=>i.Type is HistoryMediaType.Screenshot or HistoryMediaType.ScrollingScreenshot)
+            .OrderByDescending(i=>i.CreatedAtUtc).Take(20);
+    public HistoryWindow(HistoryService history,bool screenshotsOnly=false)
     {
-        Title="ЛовиКадр — история";Width=880;Height=610;WindowStartupLocation=WindowStartupLocation.CenterScreen;
+        Ui.ThemeWindow(this);
+        Title=screenshotsOnly?"ЛовиКадр — недавние снимки":"ЛовиКадр — история";Width=880;Height=610;WindowStartupLocation=WindowStartupLocation.CenterScreen;
         var root=new DockPanel{Margin=new Thickness(16)};Content=root;
-        var heading=Ui.Text("ЛОКАЛЬНАЯ ИСТОРИЯ",22);DockPanel.SetDock(heading,Dock.Top);root.Children.Add(heading);
+        var heading=Ui.Text(screenshotsOnly?"НЕДАВНИЕ СНИМКИ":"ЛОКАЛЬНАЯ ИСТОРИЯ",22);DockPanel.SetDock(heading,Dock.Top);root.Children.Add(heading);
         var list=new ListBox{Background=System.Windows.Media.Brushes.Transparent,BorderThickness=new Thickness(0)};
         var actions=new WrapPanel{Margin=new Thickness(0,8,0,0)};DockPanel.SetDock(actions,Dock.Bottom);root.Children.Add(actions);root.Children.Add(list);
         HistoryItem? Selected()=> (list.SelectedItem as ListBoxItem)?.Tag as HistoryItem;
         void Refresh()
         {
             list.Items.Clear();
-            foreach(var item in history.Items)
+            foreach(var item in screenshotsOnly?RecentScreenshots(history.Items):history.Items)
             {
                 var row=new StackPanel{Orientation=Orientation.Horizontal};
                 var icon=new System.Windows.Controls.Image{Width=80,Height=50,Margin=new Thickness(4,2,12,2)};

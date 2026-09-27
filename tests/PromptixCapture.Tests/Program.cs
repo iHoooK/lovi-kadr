@@ -46,6 +46,22 @@ Test("Unknown format rejected",()=>{var s=Valid();s.Screenshot.Format=(ImageFile
 Test("Unknown quality rejected",()=>{var s=Valid();s.Video.Quality=(VideoQuality)99;Throws(()=>SettingsService.Validate(s));});
 Test("Unsupported countdown rejected",()=>{var s=Valid();s.Video.CountdownSeconds=2;Throws(()=>SettingsService.Validate(s));});
 Test("Unknown tray action rejected",()=>{var s=Valid();s.General.LeftClickAction="unknown";Throws(()=>SettingsService.Validate(s));});
+Test("Video resize keeps the starting aspect ratio",()=>
+{
+    var size=VideoRegionSize.Scale(846,608,.75,1000,1000);
+    Assert(size.Width%2==0&&size.Height%2==0);
+    Assert(Math.Abs((double)size.Width/size.Height-846d/608)<.01);
+});
+Test("Video resize stays inside monitor",()=>
+{
+    var size=VideoRegionSize.Scale(846,608,2,650,470);
+    Assert(size.Width<=650&&size.Height<=470);
+});
+Test("Video resize enforces minimum dimensions",()=>
+{
+    var size=VideoRegionSize.Scale(846,608,.01,1000,1000);
+    Assert(size.Width>=64&&size.Height>=64);
+});
 
 const int w=160,h=360;
 var random=new Random(27);var page=new byte[w*h*3];random.NextBytes(page);
@@ -63,6 +79,81 @@ Test("Small brightness differences tolerated",()=>
 {
     var next=Frame(90);for(int i=0;i<next.Length;i++)next[i]=(byte)Math.Min(255,next[i]+2);
     var m=FrameMatcher.Match(Frame(0),next,w,h);Assert(m.Reliable&&m.Shift==90);
+});
+Test("Nested scrolling matches only the moving sidebar",()=>
+{
+    const int width=480,height=360,sidebar=96,header=24,shift=42;
+    var rng=new Random(119);
+    var background=new byte[width*height];rng.NextBytes(background);
+    var list=new byte[sidebar*(height*2)];rng.NextBytes(list);
+    byte[] Picture(int offset)
+    {
+        var pixels=(byte[])background.Clone();
+        for(int y=header;y<height;y++)for(int x=8;x<sidebar-8;x++)
+            pixels[y*width+x]=list[(y-header+offset)*sidebar+x];
+        return pixels;
+    }
+    var first=Picture(0);var second=Picture(shift);
+    var result=ScrollingFrameMatcher.Match(first,second,width,height,sidebar/2);
+    Assert(result.Match.Reliable&&result.Match.Shift==shift,$"Expected sidebar shift {shift}, got {result.Match}");
+    Assert(result.Viewport.Width<width/2&&result.Viewport.Left<=8&&result.Viewport.Right>=sidebar-8);
+    Assert(result.Viewport.Top<=header&&result.Viewport.Height>=height-header);
+});
+Test("Unchanged pane can trigger another scroll target",()=>
+{
+    var frame=Frame(0);
+    var result=ScrollingFrameMatcher.Match(frame,frame,w,h,w/2);
+    Assert(result.Match.Unchanged&&!result.SignificantMotion);
+});
+Test("Whole page scrolling keeps the selected frame",()=>
+{
+    var result=ScrollingFrameMatcher.Match(Frame(0),Frame(45),w,h,w/2);
+    Assert(result.Match.Reliable&&result.Match.Shift==45);
+    Assert(result.Viewport.X==0&&result.Viewport.Y==0&&result.Viewport.Width==w&&result.Viewport.Height==h);
+});
+Test("Sparse chat rows remain matchable inside a wide window",()=>
+{
+    const int width=480,height=360,sidebar=96,header=24,shift=36;
+    var rng=new Random(208);
+    var background=new byte[width*height];rng.NextBytes(background);
+    var list=Enumerable.Repeat((byte)245,sidebar*(height*2)).ToArray();
+    for(int row=0;row<height*2/56;row++)
+    {
+        byte shade=(byte)rng.Next(40,190);
+        for(int y=8;y<42;y++)for(int x=10;x<40;x++)
+            if((x-25)*(x-25)+(y-25)*(y-25)<200)list[(row*56+y)*sidebar+x]=shade;
+        for(int y=13;y<17;y++)for(int x=45;x<88;x++)list[(row*56+y)*sidebar+x]=(byte)rng.Next(25,110);
+        for(int y=24;y<27;y++)for(int x=45;x<76;x++)list[(row*56+y)*sidebar+x]=(byte)rng.Next(110,190);
+    }
+    byte[] Picture(int offset)
+    {
+        var pixels=(byte[])background.Clone();
+        for(int y=header;y<height;y++)for(int x=0;x<sidebar;x++)
+            pixels[y*width+x]=list[(y-header+offset)*sidebar+x];
+        return pixels;
+    }
+    var result=ScrollingFrameMatcher.Match(Picture(0),Picture(shift),width,height,sidebar/2);
+    Assert(result.Match.Reliable&&result.Match.Shift==shift,$"Expected sparse sidebar shift {shift}, got {result.Match}");
+    Assert(result.Viewport.Width<width/2);
+});
+Test("Nested scroll area keeps its full width and vertical position",()=>
+{
+    const int width=480,height=360,left=140,top=18,paneWidth=190,paneHeight=210,shift=34;
+    var rng=new Random(77);
+    var background=new byte[width*height];rng.NextBytes(background);
+    var content=new byte[paneWidth*(paneHeight+shift+20)];rng.NextBytes(content);
+    byte[] Picture(int offset)
+    {
+        var pixels=(byte[])background.Clone();
+        for(int y=0;y<paneHeight;y++)for(int x=0;x<paneWidth;x++)
+            pixels[(top+y)*width+left+x]=content[(y+offset)*paneWidth+x];
+        return pixels;
+    }
+    var result=ScrollingFrameMatcher.Match(Picture(0),Picture(shift),width,height,left+paneWidth/2);
+    Assert(result.Match.Reliable&&result.Match.Shift==shift);
+    Assert(result.Viewport.Left<=left&&result.Viewport.Right>=left+paneWidth);
+    Assert(result.Viewport.Top<=top&&result.Viewport.Bottom>=top+paneHeight);
+    Assert(result.Viewport.Width<width/2&&result.Viewport.Height<height);
 });
 foreach(var line in lines)Console.WriteLine(line);
 Console.WriteLine($"RESULT: {passed} passed, {failed} failed");

@@ -3,47 +3,34 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
-        <!-- The application uses a light surface. Keep all readable text dark so
-             code-created controls remain legible even without a custom template. -->
-        <Color x:Key="Graphite900">#F7F9FC</Color>
-        <Color x:Key="Graphite800">#FFFFFF</Color>
-        <Color x:Key="Graphite700">#202936</Color>
-        <Color x:Key="Graphite600">#344154</Color>
-        <Color x:Key="TextPrimary">#182230</Color>
-        <Color x:Key="TextSecondary">#52667F</Color>
-        <Color x:Key="ButtonText">#F4F7FB</Color>
-        <Color x:Key="Cyan">#35D0FF</Color>
-        <Color x:Key="Gold">#F0A43A</Color>
-        <Color x:Key="Success">#54D68C</Color>
-        <Color x:Key="Danger">#FF647C</Color>
-
-        <SolidColorBrush x:Key="Graphite900Brush" Color="{StaticResource Graphite900}" />
-        <SolidColorBrush x:Key="Graphite800Brush" Color="{StaticResource Graphite800}" />
-        <SolidColorBrush x:Key="Graphite700Brush" Color="{StaticResource Graphite700}" />
-        <SolidColorBrush x:Key="Graphite600Brush" Color="{StaticResource Graphite600}" />
-        <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimary}" />
-        <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondary}" />
-        <SolidColorBrush x:Key="ButtonTextBrush" Color="{StaticResource ButtonText}" />
-        <SolidColorBrush x:Key="CyanBrush" Color="{StaticResource Cyan}" />
-        <SolidColorBrush x:Key="GoldBrush" Color="{StaticResource Gold}" />
-        <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource Danger}" />
+        <SolidColorBrush x:Key="TextPrimaryBrush" Color="#182230" />
+        <SolidColorBrush x:Key="TextSecondaryBrush" Color="#526174" />
+        <SolidColorBrush x:Key="ButtonTextBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="CanvasBrush" Color="#F5F7FA" />
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#E8EEF4" />
+        <SolidColorBrush x:Key="BorderBrush" Color="#CBD5E1" />
+        <SolidColorBrush x:Key="ButtonBrush" Color="#202936" />
+        <SolidColorBrush x:Key="ButtonHoverBrush" Color="#344154" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#08799B" />
+        <SolidColorBrush x:Key="OnAccentBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="EditorCanvasBrush" Color="#E8EEF4" />
 
         <Style TargetType="Window">
-            <Setter Property="Background" Value="{DynamicResource Graphite900Brush}" />
+            <Setter Property="Background" Value="{DynamicResource CanvasBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
             <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         </Style>
 
         <Style TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
         <Style TargetType="Button">
             <Setter Property="Foreground" Value="{DynamicResource ButtonTextBrush}" />
-            <Setter Property="Background" Value="{DynamicResource Graphite700Brush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource Graphite600Brush}" />
+            <Setter Property="Background" Value="{DynamicResource ButtonBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="14,8" />
             <Setter Property="Cursor" Value="Hand" />
@@ -59,14 +46,21 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource CyanBrush}" />
-                                <Setter TargetName="Border" Property="Background" Value="#263747" />
+                                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="Border" Property="Background" Value="{DynamicResource ButtonHoverBrush}" />
                             </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True" />
+                                    <Condition Property="Tag" Value="Primary" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Border" Property="Background" Value="{DynamicResource AccentBrush}" />
+                            </MultiTrigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="Border" Property="Opacity" Value="0.78" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Border" Property="Opacity" Value="0.45" />
+                                <Setter TargetName="Border" Property="Opacity" Value="0.68" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -75,24 +69,69 @@
         </Style>
 
         <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Background" Value="{DynamicResource CyanBrush}" />
-            <Setter Property="Foreground" Value="#071118" />
-            <Setter Property="BorderBrush" Value="{DynamicResource CyanBrush}" />
+            <Setter Property="Tag" Value="Primary" />
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
 
         <Style TargetType="TextBox">
-            <Setter Property="Background" Value="{DynamicResource Graphite800Brush}" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource Graphite600Brush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
             <Setter Property="Padding" Value="10,7" />
-            <Setter Property="CaretBrush" Value="{DynamicResource CyanBrush}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource AccentBrush}" />
         </Style>
 
         <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="{DynamicResource Graphite800Brush}" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
             <Setter Property="Padding" Value="8,5" />
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border x:Name="Outer" Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                                    CornerRadius="5">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="30" />
+                                    </Grid.ColumnDefinitions>
+                                    <ContentPresenter Margin="8,2" VerticalAlignment="Center"
+                                                      Content="{TemplateBinding SelectionBoxItem}"
+                                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                      TextElement.Foreground="{TemplateBinding Foreground}" />
+                                    <ToggleButton Grid.Column="1" Focusable="False" BorderThickness="0"
+                                                  Background="Transparent" Foreground="{TemplateBinding Foreground}"
+                                                  IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                        <TextBlock Text="▾" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </ToggleButton>
+                                </Grid>
+                            </Border>
+                            <Popup x:Name="Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True" Focusable="False">
+                                <Border MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        MaxHeight="280" Background="{DynamicResource SurfaceBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" CanContentScroll="True">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="Outer" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style TargetType="CheckBox">
@@ -101,11 +140,24 @@
         </Style>
 
         <Style TargetType="ListBox">
-            <Setter Property="Background" Value="{DynamicResource Graphite900Brush}" />
+            <Setter Property="Background" Value="{DynamicResource CanvasBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         </Style>
 
         <Style TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+                    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         </Style>
     </Application.Resources>

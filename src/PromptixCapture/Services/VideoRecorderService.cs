@@ -9,6 +9,9 @@ namespace PromptixCapture.Services;
 public sealed class VideoRecorderService : IDisposable
 {
     private Recorder? _recorder;
+    private DisplayRecordingSource? _source;
+    private System.Drawing.Rectangle _monitor;
+    private int _frameWidth,_frameHeight;
     private readonly Dispatcher _dispatcher;
     private readonly Stopwatch _elapsed=new();
     private readonly TaskCompletionSource<string> _done=new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -34,10 +37,16 @@ public sealed class VideoRecorderService : IDisposable
             if(string.IsNullOrWhiteSpace(settings.MicrophoneDeviceName))sources.Add(CaptureAudioSource.Default);
             else sources.Add(Recorder.GetSystemAudioCaptureDevices().FirstOrDefault(x=>x.DeviceName==settings.MicrophoneDeviceName)??throw new InvalidOperationException("Выбранный микрофон отключён. Выберите устройство в настройках."));
         }
+        var sourceOptions=CaptureService.Sources(area,settings.IncludeCursor);
+        _source=sourceOptions.RecordingSources.OfType<DisplayRecordingSource>().Single();
+        _source.AnchorPoint=Anchor.TopLeft;
+        _source.Stretch=StretchMode.Fill;
+        _frameWidth=area.Width;_frameHeight=area.Height;
+        _monitor=System.Windows.Forms.Screen.AllScreens.Single(s=>s.Bounds.Contains(area)).Bounds;
         var options=new RecorderOptions
         {
-            SourceOptions=CaptureService.Sources(area,settings.IncludeCursor),
-            OutputOptions=new OutputOptions{RecorderMode=RecorderMode.Video,OutputFrameSize=new ScreenSize(area.Width,area.Height)},
+            SourceOptions=sourceOptions,
+            OutputOptions=new OutputOptions{RecorderMode=RecorderMode.Video,OutputFrameSize=new ScreenSize(_frameWidth,_frameHeight)},
             VideoEncoderOptions=new VideoEncoderOptions
             {
                 Framerate=settings.FramesPerSecond,Bitrate=bitrate,IsFixedFramerate=true,IsHardwareEncodingEnabled=true,
@@ -54,8 +63,17 @@ public sealed class VideoRecorderService : IDisposable
             _recorder=Recorder.CreateRecorder(options);
             _recorder.OnStatusChanged+=(_,e)=>_dispatcher.BeginInvoke(new Action(()=>
             {
-                if(_disposed||State==VideoRecorderState.Stopping)return;
-                if(e.Status==RecorderStatus.Recording){_elapsed.Start();SetState(VideoRecorderState.Recording);}
+                if(_disposed||State==VideoRecorderState.Failed)return;
+                if(State==VideoRecorderState.Stopping)
+                {
+                    // An early Stop can be ignored until native recording starts.
+                    if(e.Status==RecorderStatus.Recording)TryStopRecorder();
+                    return;
+                }
+                if(e.Status==RecorderStatus.Recording)
+                {
+                    _elapsed.Start();SetState(VideoRecorderState.Recording);
+                }
                 else if(e.Status==RecorderStatus.Paused){_elapsed.Stop();SetState(VideoRecorderState.Paused);}
             }));
             _recorder.OnRecordingComplete+=(_,e)=>_done.TrySetResult(e.FilePath);
@@ -69,10 +87,52 @@ public sealed class VideoRecorderService : IDisposable
         if(State==VideoRecorderState.Recording){_recorder?.Pause();_elapsed.Stop();SetState(VideoRecorderState.Paused);}
         else if(State==VideoRecorderState.Paused){_recorder?.Resume();_elapsed.Start();SetState(VideoRecorderState.Recording);}
     }
+    public bool UpdateRegion(DRect area)
+    {
+        if(_recorder is null || _source is null || State is VideoRecorderState.Stopping or VideoRecorderState.Failed)return false;
+        if(!_monitor.Contains(area) || area.Width<2 || area.Height<2)return false;
+        var width=area.Width-area.Width%2;var height=area.Height-area.Height%2;
+        if(width<2||height<2)return false;
+        // Even pixel dimensions can move the ratio by a few hundredths near
+        // the 64 px minimum; larger changes would visibly stretch the video.
+        if(Math.Abs((double)width/height-(double)_frameWidth/_frameHeight)>.04)return false;
+        var previousRect=_source.SourceRect;
+        var previousSize=_source.OutputSize;
+        var previousPosition=_source.Position;
+        _source.SourceRect=new ScreenRect(area.X-_monitor.X,area.Y-_monitor.Y,width,height);
+        _source.OutputSize=new ScreenSize(_frameWidth,_frameHeight);
+        _source.Position=new ScreenPoint(0,0);
+        try
+        {
+            if(_recorder.GetDynamicOptionsBuilder().SetUpdatedRecordingSource(_source).Apply())return true;
+        }
+        catch
+        {
+            _source.SourceRect=previousRect;_source.OutputSize=previousSize;_source.Position=previousPosition;
+            throw;
+        }
+        _source.SourceRect=previousRect;_source.OutputSize=previousSize;_source.Position=previousPosition;
+        return false;
+    }
     public void Stop()
     {
         if(State is VideoRecorderState.Idle or VideoRecorderState.Stopping or VideoRecorderState.Failed)return;
-        SetState(VideoRecorderState.Stopping);_elapsed.Stop();_recorder?.Stop();
+        SetState(VideoRecorderState.Stopping);_elapsed.Stop();TryStopRecorder();
+        _=WatchStopAsync();
+    }
+    private async Task WatchStopAsync()
+    {
+        try{await _done.Task.WaitAsync(TimeSpan.FromSeconds(90));}
+        catch(TimeoutException)
+        {
+            _done.TrySetException(new TimeoutException("Запись не завершилась за 90 секунд после остановки. Проверьте файл в папке видео."));
+        }
+        catch{ /* The completion task already contains the recording error. */ }
+    }
+    private void TryStopRecorder()
+    {
+        try{_recorder?.Stop();}
+        catch(Exception ex){_done.TrySetException(ex);}
     }
     public static List<(string Id,string Name)> Microphones()=>Recorder.GetSystemAudioCaptureDevices().Select(d=>(d.DeviceName,d.FriendlyName)).ToList();
     public void Dispose(){if(_disposed)return;_disposed=true;_elapsed.Stop();_recorder?.Dispose();_recorder=null;}

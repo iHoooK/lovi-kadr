@@ -56,11 +56,10 @@ public sealed class ScreenshotSettings
 
 public sealed class ScrollingSettings
 {
-    public int SettleDelayMs { get; set; } = 420;
-    public int WheelDelta { get; set; } = 600;
+    public int SettleDelayMs { get; set; } = 300;
+    public int WheelDelta { get; set; } = 240;
     public int MaxOutputHeight { get; set; } = 40_000;
     public int UnchangedFramesToStop { get; set; } = 3;
-    public bool OpenEditor { get; set; } = true;
 }
 
 public sealed class VideoSettings
@@ -75,7 +74,7 @@ public sealed class VideoSettings
     public bool CaptureMicrophone { get; set; } = true;
     public string? MicrophoneDeviceName { get; set; }
     public bool IncludeCursor { get; set; } = true;
-    public int CountdownSeconds { get; set; } = 3;
+    public int CountdownSeconds { get; set; }
     public bool OpenFolderAfterRecording { get; set; }
 }
 

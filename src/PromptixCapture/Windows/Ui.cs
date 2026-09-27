@@ -2,27 +2,63 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Shapes;
+using System.Windows.Automation;
 using Microsoft.Win32;
 
 namespace PromptixCapture.Windows;
 
 internal static class Ui
 {
-    internal static readonly Brush Cyan=new SolidColorBrush(Color.FromRgb(53,208,255));
-    internal static readonly SolidColorBrush TextPrimary=new(Color.FromRgb(24,34,48));
-    internal static readonly SolidColorBrush Muted=new(Color.FromRgb(82,102,127));
+    private static bool _watchingSystemTheme;
+    private static string _themePreference="System";
     internal static void ApplyTheme(string preference)
     {
+        _themePreference=preference;
+        if(!_watchingSystemTheme)
+        {
+            SystemEvents.UserPreferenceChanged+=(_,_)=>
+            {
+                if(_themePreference=="System" && Application.Current is {} app)
+                    app.Dispatcher.BeginInvoke(new Action(()=>ApplyTheme("System")));
+            };
+            _watchingSystemTheme=true;
+        }
         bool dark=preference=="Dark" || (preference=="System" && SystemPrefersDark());
         var colors=dark
-            ? new Dictionary<string,Color>{{"Graphite900Brush",Color.FromRgb(13,17,23)},{"Graphite800Brush",Color.FromRgb(21,27,35)},{"Graphite700Brush",Color.FromRgb(32,41,54)},{"Graphite600Brush",Color.FromRgb(52,65,84)},{"TextPrimaryBrush",Color.FromRgb(244,247,251)},{"TextSecondaryBrush",Color.FromRgb(169,182,199)},{"ButtonTextBrush",Color.FromRgb(244,247,251)}}
-            : new Dictionary<string,Color>{{"Graphite900Brush",Color.FromRgb(247,249,252)},{"Graphite800Brush",Colors.White},{"Graphite700Brush",Color.FromRgb(32,41,54)},{"Graphite600Brush",Color.FromRgb(52,65,84)},{"TextPrimaryBrush",Color.FromRgb(24,34,48)},{"TextSecondaryBrush",Color.FromRgb(82,102,127)},{"ButtonTextBrush",Color.FromRgb(244,247,251)}};
+            ? new Dictionary<string,Color>
+            {
+                ["CanvasBrush"]=Color.FromRgb(13,17,23),["SurfaceBrush"]=Color.FromRgb(21,27,35),
+                ["SurfaceHoverBrush"]=Color.FromRgb(39,53,71),["BorderBrush"]=Color.FromRgb(52,65,84),
+                ["ButtonBrush"]=Color.FromRgb(52,65,84),["ButtonHoverBrush"]=Color.FromRgb(70,87,112),
+                ["TextPrimaryBrush"]=Color.FromRgb(244,247,251),["TextSecondaryBrush"]=Color.FromRgb(169,182,199),
+                ["ButtonTextBrush"]=Colors.White,["AccentBrush"]=Color.FromRgb(53,208,255),
+                ["OnAccentBrush"]=Color.FromRgb(7,17,24),["EditorCanvasBrush"]=Color.FromRgb(27,36,48)
+            }
+            : new Dictionary<string,Color>
+            {
+                ["CanvasBrush"]=Color.FromRgb(245,247,250),["SurfaceBrush"]=Colors.White,
+                ["SurfaceHoverBrush"]=Color.FromRgb(232,238,244),["BorderBrush"]=Color.FromRgb(203,213,225),
+                ["ButtonBrush"]=Color.FromRgb(32,41,54),["ButtonHoverBrush"]=Color.FromRgb(52,65,84),
+                ["TextPrimaryBrush"]=Color.FromRgb(24,34,48),["TextSecondaryBrush"]=Color.FromRgb(82,97,116),
+                ["ButtonTextBrush"]=Colors.White,["AccentBrush"]=Color.FromRgb(8,121,155),
+                ["OnAccentBrush"]=Colors.White,["EditorCanvasBrush"]=Color.FromRgb(232,238,244)
+            };
         // Brushes declared in XAML may be frozen once WPF seals the resource/style
         // graph. Updating Color on such a brush throws "read-only state" during
         // startup. Replacing the resource is safe and lets DynamicResource users
         // pick up the new value.
         foreach(var pair in colors)Application.Current.Resources[pair.Key]=new SolidColorBrush(pair.Value);
-        TextPrimary.Color=colors["TextPrimaryBrush"];Muted.Color=colors["TextSecondaryBrush"];
+        foreach(Window window in Application.Current.Windows)
+        {
+            window.SetResourceReference(Window.BackgroundProperty,"CanvasBrush");
+            window.SetResourceReference(Window.ForegroundProperty,"TextPrimaryBrush");
+        }
+    }
+    internal static void ThemeWindow(Window window)
+    {
+        window.SetResourceReference(Window.BackgroundProperty,"CanvasBrush");
+        window.SetResourceReference(Window.ForegroundProperty,"TextPrimaryBrush");
     }
     private static bool SystemPrefersDark()
     {
@@ -39,12 +75,47 @@ internal static class Ui
             Width=42,Height=38,MinHeight=38,Padding=new Thickness(0),Margin=new Thickness(3),ToolTip=tip};
         button.Click+=(_,_)=>action();return button;
     }
+    internal static Button ActionIconButton(string icon,Action action,string label,string shortcut="")
+    {
+        var button=new Button{Width=40,Height=38,MinHeight=38,Padding=new Thickness(8),Margin=new Thickness(3)};
+        SetActionIcon(button,icon,label,shortcut);
+        button.Click+=(_,_)=>action();return button;
+    }
+    internal static void SetActionIcon(Button button,string icon,string label,string shortcut="")
+    {
+        string data=icon switch
+        {
+            "copy"=>"M 8,5 L 19,5 19,19 8,19 Z M 5,16 L 3,16 3,2 15,2 15,5",
+            "save"=>"M 3,2 L 17,2 21,6 21,22 3,22 Z M 7,2 L 7,9 17,9 17,2 M 7,22 L 7,14 17,14 17,22",
+            "edit"=>"M 4,20 L 9,19 20,8 16,4 5,15 Z M 13,7 L 17,11",
+            "close"=>"M 4,4 L 20,20 M 20,4 L 4,20",
+            "screenshot"=>"M 3,9 L 3,3 9,3 M 15,3 L 21,3 21,9 M 21,15 L 21,21 15,21 M 9,21 L 3,21 3,15 M 7,12 L 17,12",
+            "video"=>"M 3,5 L 16,5 16,19 3,19 Z M 16,9 L 21,6 21,18 16,15",
+            "scroll"=>"M 5,2 L 16,2 20,6 20,21 5,21 Z M 16,2 L 16,6 20,6 M 8,10 L 16,10 M 8,13 L 16,13 M 12,15 L 12,20 M 9,17 L 12,20 15,17",
+            "record"=>"M 12,3 A 9,9 0 1 1 11.99,3 Z",
+            "pause"=>"M 6,4 L 10,4 10,20 6,20 Z M 14,4 L 18,4 18,20 14,20 Z",
+            "play"=>"M 7,4 L 20,12 7,20 Z",
+            "stop"=>"M 5,5 L 19,5 19,19 5,19 Z",
+            _=>throw new ArgumentOutOfRangeException(nameof(icon))
+        };
+        var path=new System.Windows.Shapes.Path{Data=Geometry.Parse(data),Width=20,Height=20,Stretch=Stretch.Uniform,StrokeThickness=1.8,StrokeLineJoin=PenLineJoin.Round};
+        path.SetResourceReference(Shape.StrokeProperty,"ButtonTextBrush");
+        if(icon=="record"){path.Fill=new SolidColorBrush(Color.FromRgb(232,61,65));path.Stroke=path.Fill;}
+        else if(icon is "pause" or "play" or "stop")path.SetResourceReference(Shape.FillProperty,"ButtonTextBrush");
+        button.Content=path;button.ToolTip=shortcut.Length==0?label:$"{label} · {shortcut}";
+        AutomationProperties.SetName(button,label);
+    }
     internal static Button AsyncButton(string text,Func<Task> action,string? tip=null)
     {
         var button=new Button{Content=text,Margin=new Thickness(3),MinHeight=36,ToolTip=tip??text};
         button.Click+=async(_,_)=>{button.IsEnabled=false;try{await action();}catch(Exception ex){Error(ex);}finally{button.IsEnabled=true;}};return button;
     }
-    internal static TextBlock Text(string text,double size=14,bool muted=false)=>new(){Text=text,FontSize=size,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(3,6,3,6),Foreground=muted?Muted:TextPrimary};
+    internal static TextBlock Text(string text,double size=14,bool muted=false)
+    {
+        var block=new TextBlock{Text=text,FontSize=size,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(3,6,3,6)};
+        block.SetResourceReference(TextBlock.ForegroundProperty,muted?"TextSecondaryBrush":"TextPrimaryBrush");
+        return block;
+    }
     internal static void Error(Exception ex){Services.AppLog.Error("User operation",ex);MessageBox.Show(ex.Message,"ЛовиКадр",MessageBoxButton.OK,MessageBoxImage.Warning);}
     internal static void Open(string path)
     {try{Process.Start(new ProcessStartInfo(path){UseShellExecute=true});}catch(Exception ex){Error(ex);}}
@@ -52,7 +123,7 @@ internal static class Ui
     {try{Process.Start(new ProcessStartInfo("explorer.exe",$"/select,\"{path}\""){UseShellExecute=true});}catch(Exception ex){Error(ex);}}
     internal static string? Prompt(Window? owner,string title,string label,string initial)
     {
-        var dialog=new Window{Title=title,Width=440,Height=285,WindowStartupLocation=WindowStartupLocation.CenterOwner,Owner=owner,ResizeMode=ResizeMode.NoResize};
+        var dialog=new Window{Title=title,Width=440,Height=285,WindowStartupLocation=WindowStartupLocation.CenterOwner,Owner=owner,ResizeMode=ResizeMode.NoResize};ThemeWindow(dialog);
         var panel=new StackPanel{Margin=new Thickness(18)};var input=new TextBox{Text=initial,Height=120,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
         panel.Children.Add(Text(label));panel.Children.Add(input);var actions=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right};
         actions.Children.Add(Button("Отмена",()=>dialog.DialogResult=false));actions.Children.Add(Button("Готово",()=>dialog.DialogResult=true));panel.Children.Add(actions);dialog.Content=panel;

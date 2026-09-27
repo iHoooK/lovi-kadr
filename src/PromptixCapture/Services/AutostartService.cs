@@ -15,7 +15,7 @@ public static class AutostartService
         if (!enabled) { key.DeleteValue("LoviKadr", false); return; }
         var exe = Environment.ProcessPath ?? throw new InvalidOperationException("Не удалось определить путь EXE.");
         if (!Path.GetFileName(exe).Equals("LoviKadr.exe", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Для автозапуска сначала создайте portable EXE и запустите его.");
+            throw new InvalidOperationException("Не удалось включить автозапуск. Запустите ЛовиКадр из установленной программы или постоянной папки portable-версии и попробуйте снова.");
         key.SetValue("LoviKadr", $"\"{exe}\" --startup");
     }
 }

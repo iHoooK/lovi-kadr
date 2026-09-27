@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
@@ -81,7 +82,22 @@ public sealed class CaptureService
     {
         using var bitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppArgb);
         using var graphics = Graphics.FromImage(bitmap);
-        graphics.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size, CopyPixelOperation.SourceCopy | CopyPixelOperation.CaptureBlt);
+        var screenDc=NativeMethods.GetDC(IntPtr.Zero);
+        if(screenDc==IntPtr.Zero)throw new Win32Exception(Marshal.GetLastWin32Error());
+        try
+        {
+            var bitmapDc=graphics.GetHdc();
+            try
+            {
+                // Graphics.CopyFromScreen rejects SRCCOPY | CAPTUREBLT because the
+                // combined value is not a named CopyPixelOperation enum member.
+                const uint sourceCopyWithLayeredWindows=0x40CC0020;
+                if(!NativeMethods.BitBlt(bitmapDc,0,0,bounds.Width,bounds.Height,screenDc,bounds.X,bounds.Y,sourceCopyWithLayeredWindows))
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            finally{graphics.ReleaseHdc(bitmapDc);}
+        }
+        finally{NativeMethods.ReleaseDC(IntPtr.Zero,screenDc);}
         if (cursor)
         {
             var ci = new NativeMethods.CURSORINFO { Size = Marshal.SizeOf<NativeMethods.CURSORINFO>() };

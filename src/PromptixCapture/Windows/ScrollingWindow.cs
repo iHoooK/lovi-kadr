@@ -16,6 +16,7 @@ public sealed class ScrollingWindow : Window
     public ScrollResult? Result { get; private set; }
     public ScrollingWindow(CaptureService capture,DRect area,ScrollingSettings settings)
     {
+        Ui.ThemeWindow(this);
         Title="ЛовиКадр — длинный снимок";Width=480;Height=225;ResizeMode=ResizeMode.NoResize;Topmost=true;
         WindowStartupLocation=WindowStartupLocation.CenterScreen;
         _service=new ScrollingCaptureService(capture);
