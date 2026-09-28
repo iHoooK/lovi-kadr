@@ -168,7 +168,7 @@ public sealed class EditorWindow : Window
         ImageExportService.Save(image,path,_settings.JpegQuality);_lastFile=path;_exportedRevision=_document.Revision;
         _lastDirectory=Path.GetDirectoryName(path)??_lastDirectory;
         _history.Add(new HistoryItem{Path=path,Type=_kind,Width=image.PixelWidth,Height=image.PixelHeight});_status.Text="Сохранено: "+Path.GetFileName(path);
-        AppNotifications.Show((_kind==HistoryMediaType.ScrollingScreenshot?"Длинный снимок сохранён: ":"Снимок сохранён: ")+Path.GetFileName(path));return Task.CompletedTask;
+        AppNotifications.Show((_kind==HistoryMediaType.ScrollingScreenshot?"Длинный снимок сохранён: ":"Снимок сохранён: ")+Path.GetFileName(path),path);return Task.CompletedTask;
     }
     private void ConfirmClose(object? sender,CancelEventArgs e)
     {

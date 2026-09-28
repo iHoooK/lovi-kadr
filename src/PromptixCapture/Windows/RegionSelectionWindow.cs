@@ -27,18 +27,13 @@ public sealed class RegionSelectionWindow : Window
     private readonly Border _actions;
     private readonly Button _compactTools;
     private readonly Button _compactActions;
-    private Button? _scrollStart,_scrollStop;
-    private MenuItem? _scrollStartMenu,_scrollStopMenu;
     private readonly TextBlock _heading;
     private readonly TextBlock _description;
     private readonly CaptureService? _capture;
     private readonly ScrollingSettings? _scrollSettings;
-    private ScrollingCaptureService? _scrollService;
-    private readonly CancellationTokenSource _scrollCancel=new();
-    private bool _scrollingActive;
-    private bool _scrollingFinished;
+    private ScrollingWindow? _scrollingControl;
+    private bool _scrollingActive,_scrollingFinished,_scrollingStopRequested;
     private bool _captureExcluded;
-    private Action<AnnotationTool>? _selectTool;
     private readonly VideoSettings? _videoSettings;
     private readonly HistoryService? _history;
     private readonly DispatcherTimer _videoTimer=new(){Interval=TimeSpan.FromMilliseconds(150)};
@@ -77,9 +72,9 @@ public sealed class RegionSelectionWindow : Window
         };
         var description=purpose switch
         {
-            CapturePurpose.Video=>$"Выделите область · звук и микрофон — в настройках · {video?.FramesPerSecond??30} FPS",
-            CapturePurpose.ScrollingScreenshot=>"Выделите область, добавьте пометки и нажмите «Начать захват».",
-            _=>"После выделения можно добавить пометки, скопировать или сохранить снимок."
+            CapturePurpose.Video=>$"Выделите область · Ctrl+A — весь главный экран · звук и микрофон — в настройках · {video?.FramesPerSecond??30} FPS",
+            CapturePurpose.ScrollingScreenshot=>"Выделите область и нажмите «Начать захват». Рамка останется на экране до завершения.",
+            _=>"Выделите область (Ctrl+A — весь главный экран), затем добавьте пометки, скопируйте или сохраните снимок."
         };
         _heading=OverlayText(heading,16);_description=OverlayText(description,12);
         _banner.Child=new StackPanel{Children={_heading,_description}};
@@ -89,7 +84,7 @@ public sealed class RegionSelectionWindow : Window
         _compactTools=Ui.IconButton("✎",()=>OpenMenu(_compactTools),"Инструменты · меню");overlay.Children.Add(_compactTools);
         var toolItems=new (AnnotationTool Tool,string Icon,string Label)[]
         {
-            (AnnotationTool.Select,"⌖","Выбор / перемещение"),(AnnotationTool.Pen,"✎","Ручка"),
+            (AnnotationTool.Select,"⌖","Выбор / перемещение пометки или области"),(AnnotationTool.Pen,"✎","Ручка"),
             (AnnotationTool.Highlighter,"●","Маркер"),(AnnotationTool.Line,"╱","Линия"),
             (AnnotationTool.Arrow,"↗","Стрелка"),(AnnotationTool.Rectangle,"▭","Прямоугольник"),
             (AnnotationTool.Ellipse,"◯","Эллипс"),(AnnotationTool.Text,"T","Текст")
@@ -98,17 +93,9 @@ public sealed class RegionSelectionWindow : Window
         void SelectTool(AnnotationTool tool)
         {
             _surface.SetTool(tool);
-            if(_scrollingActive && _scrollService is not null)
-            {
-                _scrollService.ManuallyPaused=tool!=AnnotationTool.Select;
-                _description.Text=tool==AnnotationTool.Select
-                    ? "Наведите курсор внутрь рамки для прокрутки. Уберите курсор, чтобы приостановить. Нажмите «Стоп», чтобы скопировать снимок."
-                    : "Пометки: прокрутка приостановлена. Выберите курсор, чтобы продолжить.";
-            }
             foreach(var (key,button) in toolButtons)
                 button.SetResourceReference(Button.BorderBrushProperty,key==tool?"AccentBrush":"BorderBrush");
         }
-        _selectTool=SelectTool;
         if(purpose is CapturePurpose.Screenshot or CapturePurpose.ScrollingScreenshot or CapturePurpose.Video)
         {
             foreach(var (tool,icon,label) in toolItems)
@@ -129,6 +116,7 @@ public sealed class RegionSelectionWindow : Window
             widthChoice.SelectionChanged+=(_,_)=>{if(widthChoice.SelectedItem is double width)_surface.SetStrokeWidth(width);};
             toolColumn.Children.Add(widthChoice);
             toolColumn.Children.Add(Ui.IconButton("↶",_surface.Undo,"Убрать последнюю пометку · Ctrl+Z"));
+            toolColumn.Children.Add(Ui.IconButton("×",_surface.DeleteSelected,"Удалить выбранную пометку · Delete"));
             SelectTool(AnnotationTool.Select);
             var toolMenu=new ContextMenu();
             foreach(var (tool,_,label) in toolItems)
@@ -145,6 +133,7 @@ public sealed class RegionSelectionWindow : Window
                 var selected=width;var item=new MenuItem{Header=$"Толщина · {width:0}"};item.Click+=(_,_)=>_surface.SetStrokeWidth(selected);toolMenu.Items.Add(item);
             }
             var undo=new MenuItem{Header="Убрать последнюю пометку"};undo.Click+=(_,_)=>_surface.Undo();toolMenu.Items.Add(undo);
+            var delete=new MenuItem{Header="Удалить выбранную пометку",InputGestureText="Delete"};delete.Click+=(_,_)=>_surface.DeleteSelected();toolMenu.Items.Add(delete);
             ThemeMenu(toolMenu);_compactTools.ContextMenu=toolMenu;
         }
 
@@ -152,7 +141,7 @@ public sealed class RegionSelectionWindow : Window
         var actionMenu=new ContextMenu();
         void AddAction(string label,SelectionAction? action,string icon="",string shortcut="")
         {
-            Action run=()=>{if(action is null){if(Purpose==CapturePurpose.Video)CancelVideo();else if(_scrollingActive)CancelScrolling();else DialogResult=false;}else Finish(action.Value);};
+            Action run=()=>{if(action is null){if(Purpose==CapturePurpose.Video)CancelVideo();else DialogResult=false;}else Finish(action.Value);};
             actionRow.Children.Add(icon.Length==0?Ui.Button(label,run):Ui.ActionIconButton(icon,run,label,shortcut));
             var item=new MenuItem{Header=label,InputGestureText=shortcut};item.Click+=(_,_)=>run();actionMenu.Items.Add(item);
         }
@@ -175,13 +164,8 @@ public sealed class RegionSelectionWindow : Window
         }
         else
         {
-            var start=Ui.Button("Начать захват",()=>_ = StartScrolling(),"Начать захват длинного снимка · Enter");
-            actionRow.Children.Add(start);
-            var stop=Ui.Button("Стоп",Stop,"Остановить и скопировать снимок");stop.Visibility=Visibility.Collapsed;
-            actionRow.Children.Add(stop);
-            var item=new MenuItem{Header="Начать захват",InputGestureText="Enter"};item.Click+=(_,_)=>_ = StartScrolling();actionMenu.Items.Add(item);
-            var stopItem=new MenuItem{Header="Стоп",InputGestureText="Enter",Visibility=Visibility.Collapsed};stopItem.Click+=(_,_)=>Stop();actionMenu.Items.Add(stopItem);
-            _scrollStart=start;_scrollStop=stop;_scrollStartMenu=item;_scrollStopMenu=stopItem;
+            actionRow.Children.Add(Ui.Button("Начать захват",()=>_=StartScrolling(),"Прокрутить выделенную область · Enter"));
+            var item=new MenuItem{Header="Начать захват",InputGestureText="Enter"};item.Click+=(_,_)=>_=StartScrolling();actionMenu.Items.Add(item);
         }
         AddAction("Отмена",null,"close","Esc");
         ThemeMenu(actionMenu);
@@ -195,7 +179,7 @@ public sealed class RegionSelectionWindow : Window
         _surface.AnnotationsUpdated+=()=>_videoAnnotations?.Refresh();
         _root.SizeChanged+=(_,_)=>UpdateFloatingUi();
         Content=_root;UpdateFloatingUi();
-        SourceInitialized += (_, _) => { NativeMethods.PlacePixels(this, desktop);if(purpose is CapturePurpose.ScrollingScreenshot or CapturePurpose.Video){_captureExcluded=NativeMethods.ExcludeFromCapture(this);((HwndSource)PresentationSource.FromVisual(this)!).AddHook(HitTestHook);} };
+        SourceInitialized += (_, _) => { NativeMethods.PlacePixels(this, desktop);if(purpose is CapturePurpose.Video or CapturePurpose.ScrollingScreenshot)_captureExcluded=NativeMethods.ExcludeFromCapture(this);if(purpose==CapturePurpose.Video)((HwndSource)PresentationSource.FromVisual(this)!).AddHook(HitTestHook); };
         Loaded += (_, _) =>
         {
             NativeMethods.PlacePixels(this, desktop);
@@ -213,6 +197,12 @@ public sealed class RegionSelectionWindow : Window
             }
             Activate(); Focus(); UpdateFloatingUi();
         };
+        PreviewKeyDown += (_, e) =>
+        {
+            if(e.Key!=Key.A || Keyboard.Modifiers!=ModifierKeys.Control || _videoStarted)return;
+            if(System.Windows.Forms.Screen.PrimaryScreen is { } primary)_surface.SelectRegion(primary.Bounds);
+            e.Handled=true;
+        };
         KeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape) { if(purpose==CapturePurpose.Video)CancelVideo();else if(_scrollingActive)CancelScrolling();else DialogResult = false; e.Handled = true; return; }
@@ -220,19 +210,22 @@ public sealed class RegionSelectionWindow : Window
             if (purpose==CapturePurpose.Screenshot && Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && e.Key==Key.S) { Finish(SelectionAction.Save); e.Handled=true; return; }
             if (purpose==CapturePurpose.Screenshot && Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && e.Key==Key.E) { Finish(SelectionAction.Editor); e.Handled=true; return; }
             if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && e.Key==Key.Z) { _surface.Undo(); e.Handled=true; return; }
+            if (e.Key==Key.Delete && _surface.HasSelectedAnnotation) { _surface.DeleteSelected();e.Handled=true;return; }
             if (purpose==CapturePurpose.ScrollingScreenshot && e.Key==Key.Enter){if(_scrollingActive)Stop();else _=StartScrolling();e.Handled=true;return;}
             if (purpose==CapturePurpose.Video && e.Key == Key.Enter)
             { StartOrToggleVideo(); e.Handled = true; return; }
             var delta = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 10 : 1;
             if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
             {
-                _surface.Move(e.Key == Key.Left ? -delta : e.Key == Key.Right ? delta : 0, e.Key == Key.Up ? -delta : e.Key == Key.Down ? delta : 0);
+                int dx=e.Key == Key.Left ? -delta : e.Key == Key.Right ? delta : 0;
+                int dy=e.Key == Key.Up ? -delta : e.Key == Key.Down ? delta : 0;
+                if(_surface.HasSelectedAnnotation)_surface.MoveSelected(dx,dy);else _surface.Move(dx,dy);
                 e.Handled = true;
             }
         };
         MouseRightButtonDown += (_, _) => {if(purpose==CapturePurpose.Video){if(!_videoStarted)CancelVideo();}else if(!_scrollingActive)DialogResult=false;};
-        Closing+=(_,e)=>{if(purpose==CapturePurpose.Video&&_videoStarted&&!_videoFinished){e.Cancel=true;Stop();}};
-        Closed+=(_,_)=>{_scrollCancel.Dispose();_videoTimer.Stop();_videoAnnotations?.Close();if(purpose==CapturePurpose.Video)Finished?.Invoke();};
+        Closing+=(_,e)=>{if((purpose==CapturePurpose.Video&&_videoStarted&&!_videoFinished) || (_scrollingActive&&!_scrollingFinished)){e.Cancel=true;Stop();}};
+        Closed+=(_,_)=>{_videoTimer.Stop();_videoAnnotations?.Close();if(purpose==CapturePurpose.Video)Finished?.Invoke();};
     }
     private static Border FloatingPanel()=>new(){Background=new SolidColorBrush(Color.FromArgb(240,21,27,35)),BorderBrush=new SolidColorBrush(Color.FromRgb(92,113,137)),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(9),Padding=new Thickness(5)};
     private void StartOrToggleVideo()
@@ -283,7 +276,7 @@ public sealed class RegionSelectionWindow : Window
                 if(!File.Exists(saved) || new FileInfo(saved).Length==0)
                     throw new IOException("Запись завершилась, но видеофайл не найден в выбранной папке.");
                 _history.Add(new HistoryItem{Path=saved,Type=HistoryMediaType.Video,Width=_outputRegion.Width,Height=_outputRegion.Height,DurationSeconds=_recorder.Elapsed.TotalSeconds});
-                AppNotifications.Show("Видео сохранено: "+Path.GetFileName(saved));
+                AppNotifications.Show("Видео сохранено: "+Path.GetFileName(saved),saved);
                 if(_videoSettings.OpenFolderAfterRecording)Ui.Reveal(saved);
             }
         }
@@ -345,32 +338,47 @@ public sealed class RegionSelectionWindow : Window
     }
     private async Task StartScrolling()
     {
-        if(_scrollingActive || Purpose!=CapturePurpose.ScrollingScreenshot || _capture is null || _scrollSettings is null)return;
-        if(!_captureExcluded){Ui.Error(new InvalidOperationException("Windows не разрешила скрыть рамку из снимка. Обновите Windows и повторите захват."));return;}
+        if(Purpose!=CapturePurpose.ScrollingScreenshot || !IsVisible || _scrollingActive || _capture is null || _scrollSettings is null)return;
+        if(!_captureExcluded || !NativeMethods.IsExcludedFromCapture(this))
+        {Ui.Error(new InvalidOperationException("Windows не разрешила скрыть рамку из снимка. Захват не начат."));return;}
         if(_surface.Selection.Width<64 || _surface.Selection.Height<128)
         {Ui.Error(new InvalidOperationException("Для длинного снимка выделите область минимум 64 × 128 px."));return;}
         var region=_surface.PixelRectangle();
         if(!System.Windows.Forms.Screen.AllScreens.Any(screen=>screen.Bounds.Contains(region)))
         {Ui.Error(new InvalidOperationException("Для длинного снимка выделите область внутри одного монитора."));return;}
+        var activeActions=_actions.Visibility==Visibility.Visible?(FrameworkElement)_actions:_compactActions;
+        var toolbarPoint=activeActions.PointToScreen(new Point(0,0));
+        var toolbarPosition=new System.Drawing.Point((int)Math.Round(toolbarPoint.X),(int)Math.Round(toolbarPoint.Y));
         _scrollingActive=true;
-        _scrollService=new ScrollingCaptureService(_capture);
         _surface.LiveMode=true;
-        _selectTool?.Invoke(AnnotationTool.Select);
         _heading.Text="ДЛИННЫЙ СНИМОК · захват";
-        _description.Text="Наведите курсор внутрь рамки для прокрутки. Уберите курсор, чтобы приостановить. Нажмите «Стоп», чтобы скопировать снимок.";
-        _scrollStart!.Visibility=Visibility.Collapsed;_scrollStop!.Visibility=Visibility.Visible;
-        _scrollStartMenu!.Visibility=Visibility.Collapsed;_scrollStopMenu!.Visibility=Visibility.Visible;
-        UpdateFloatingUi();
-        var progress=new Progress<ScrollProgress>(p=>_heading.Text=$"ДЛИННЫЙ СНИМОК · {p.State} · {p.Frames} кадр. · {p.Height} px");
+        _description.Text="Курсор внутри рамки — прокрутка; снаружи — пауза. «Стоп» сохранит снимок.";
+        _actions.Visibility=Visibility.Collapsed;_compactActions.Visibility=Visibility.Collapsed;
+        _tools.Visibility=Visibility.Collapsed;_compactTools.Visibility=Visibility.Collapsed;
         try
         {
-            // Let the start-button click finish before the overlay becomes click-through.
-            await Task.Delay(100,_scrollCancel.Token);
-            ScrollingResult=await _scrollService.RunAsync(region,_scrollSettings,progress,_scrollCancel.Token);
-            _scrollingFinished=true;DialogResult=true;
+            // Keep the frame visible and pass wheel input to the browser. The
+            // small action surface remains clickable at the old toolbar position.
+            await Task.Delay(100);
+            if(!NativeMethods.MakeClickThrough(this))
+                throw new InvalidOperationException("Не удалось передать прокрутку окну под рамкой.");
+            var control=new ScrollingWindow(_capture,region,_scrollSettings,toolbarPosition);
+            _scrollingControl=control;
+            control.Loaded+=(_,_)=>{if(_scrollingStopRequested)control.Stop();};
+            try
+            {
+                if(control.ShowDialog()==true)ScrollingResult=control.Result;
+            }
+            finally{_scrollingControl=null;}
+            _scrollingFinished=true;
+            DialogResult=ScrollingResult is not null;
         }
-        catch(OperationCanceledException){_scrollingFinished=true;DialogResult=false;}
-        catch(Exception ex){_scrollingFinished=true;DialogResult=false;Ui.Error(ex);}
+        catch(Exception ex)
+        {
+            _scrollingFinished=true;
+            Ui.Error(ex);
+            DialogResult=false;
+        }
     }
     public void Stop()
     {
@@ -384,17 +392,24 @@ public sealed class RegionSelectionWindow : Window
             }
             return;
         }
-        if(_scrollingActive)_scrollService!.StopRequested=true;
-        else if(Purpose==CapturePurpose.ScrollingScreenshot)DialogResult=false;
+        if(Purpose==CapturePurpose.ScrollingScreenshot)
+        {
+            if(_scrollingActive)
+            {
+                if(_scrollingControl is {} control)control.Stop();
+                else _scrollingStopRequested=true;
+            }
+            else DialogResult=false;
+        }
     }
     private void CancelScrolling()
     {
-        if(_scrollingActive)_scrollCancel.Cancel();
-        else DialogResult=false;
+        if(_scrollingControl is {} control)control.Cancel();
+        else if(!_scrollingActive)DialogResult=false;
     }
     private IntPtr HitTestHook(IntPtr hwnd,int message,IntPtr wParam,IntPtr lParam,ref bool handled)
     {
-        if(message!=0x84 || !(_scrollingActive&&!_scrollingFinished || _videoStarted&&!_videoFinished))return IntPtr.Zero;
+        if(message!=0x84 || !_videoStarted || _videoFinished)return IntPtr.Zero;
         var cursor=NativeMethods.CursorPosition;
         var point=_root.PointFromScreen(new Point(cursor.X,cursor.Y));
         static bool Contains(FrameworkElement element,Point point)
@@ -418,6 +433,12 @@ public sealed class RegionSelectionWindow : Window
     {
         if(_root.ActualWidth<=0||_root.ActualHeight<=0)return;
         _banner.MaxWidth=Math.Max(120,_root.ActualWidth-32);
+        if(_scrollingActive)
+        {
+            _actions.Visibility=Visibility.Collapsed;_compactActions.Visibility=Visibility.Collapsed;
+            _tools.Visibility=Visibility.Collapsed;_compactTools.Visibility=Visibility.Collapsed;
+            return;
+        }
         var selection=_surface.Selection;
         bool selected=selection.Width>2&&selection.Height>2;
         _actions.Visibility=selected?Visibility.Visible:Visibility.Collapsed;
@@ -523,7 +544,12 @@ public sealed class RegionSelectionWindow : Window
         private readonly DRect _desktop;
         private readonly bool _videoLive;
         private readonly List<AnnotationModel> _annotations=new();
+        private readonly Stack<List<AnnotationModel>> _annotationUndo=new();
         private AnnotationModel? _annotationDraft;
+        private AnnotationModel? _selectedAnnotation;
+        private bool _draggingAnnotation,_annotationMoveSaved;
+        private Point _annotationLast;
+        public bool HasSelectedAnnotation=>_selectedAnnotation is not null;
         private AnnotationTool _tool=AnnotationTool.Select;
         public AnnotationTool CurrentTool=>_tool;
         private bool _liveMode;
@@ -551,7 +577,15 @@ public sealed class RegionSelectionWindow : Window
             if (previous is { } p && desktop.Contains(p)) Selection = new Rect(p.X - desktop.X, p.Y - desktop.Y, p.Width, p.Height);
             MouseLeftButtonDown += Down;
             MouseMove += Drag;
-            MouseLeftButtonUp += (_, e) => { _annotationDraft=null;ReleaseMouseCapture(); UpdateCursor(PixelPoint(e)); SelectionUpdated?.Invoke(); };
+            MouseLeftButtonUp += (_, e) =>
+            {
+                if(_annotationDraft is {} draft && draft.Tool is not (AnnotationTool.Pen or AnnotationTool.Highlighter) && (draft.End-draft.Start).Length<2)
+                {
+                    _annotations.Remove(draft);AnnotationsUpdated?.Invoke();
+                }
+                _annotationDraft=null;_draggingAnnotation=false;_annotationMoveSaved=false;
+                ReleaseMouseCapture();UpdateCursor(PixelPoint(e));SelectionUpdated?.Invoke();
+            };
         }
         private Point PixelPoint(MouseEventArgs e) { var p = e.GetPosition(this); return new Point(p.X * _desktop.Width / Math.Max(1,ActualWidth), p.Y * _desktop.Height / Math.Max(1,ActualHeight)); }
         public void BeginVideoRecording(DRect monitor)
@@ -568,11 +602,17 @@ public sealed class RegionSelectionWindow : Window
             foreach(var annotation in _annotations)annotation.Translate(delta);
             Selection=moved;InvalidateVisual();SelectionUpdated?.Invoke();
         }
+        public void SelectRegion(DRect absolute)
+        {
+            Selection=new Rect(absolute.X-_desktop.X,absolute.Y-_desktop.Y,absolute.Width,absolute.Height);
+            InvalidateVisual();SelectionUpdated?.Invoke();
+        }
         public bool WantsPointer(Point point)
         {
             if(_tool!=AnnotationTool.Select&&Selection.Contains(point))return true;
             var r=Selection;
             if(r.Width<=0)return false;
+            if(Selection.Contains(point)&&HitAnnotation(point) is not null)return true;
             return point.X>=r.Left-10&&point.X<=r.Right+10&&point.Y>=r.Top-10&&point.Y<=r.Bottom+10&&
                 (Math.Abs(point.X-r.Left)<=10||Math.Abs(point.X-r.Right)<=10||Math.Abs(point.Y-r.Top)<=10||Math.Abs(point.Y-r.Bottom)<=10);
         }
@@ -588,19 +628,27 @@ public sealed class RegionSelectionWindow : Window
             _start = PixelPoint(e); _before = Selection; _drag = 0;
             if(_tool!=AnnotationTool.Select)
             {
+                SetSelectedAnnotation(null);
                 if(Selection.Width<=2||Selection.Height<=2||!Selection.Contains(_start))return;
                 if(_tool==AnnotationTool.Text)
                 {
                     var value=Ui.Prompt(Window.GetWindow(this),"Текст на снимке","Введите текст:","");
-                    if(!string.IsNullOrWhiteSpace(value))_annotations.Add(new AnnotationModel{Tool=_tool,Start=_start,End=_start,Color=_color,Thickness=_strokeWidth,FontSize=24,Text=value});
+                    if(!string.IsNullOrWhiteSpace(value)){SaveAnnotationUndo();_annotations.Add(new AnnotationModel{Tool=_tool,Start=_start,End=_start,Color=_color,Thickness=_strokeWidth,FontSize=24,Text=value});}
                     InvalidateVisual();AnnotationsUpdated?.Invoke();return;
                 }
+                SaveAnnotationUndo();
                 _annotationDraft=new AnnotationModel{Tool=_tool,Start=_start,End=_start,Color=_color,Thickness=_strokeWidth};
                 if(_tool is AnnotationTool.Pen or AnnotationTool.Highlighter)_annotationDraft.Points.Add(_start);
                 _annotations.Add(_annotationDraft);CaptureMouse();InvalidateVisual();AnnotationsUpdated?.Invoke();return;
             }
             if (Selection.Width > 0)
             {
+                if(Selection.Contains(_start) && HitAnnotation(_start) is {} annotation)
+                {
+                    SetSelectedAnnotation(annotation);_draggingAnnotation=true;_annotationMoveSaved=false;_annotationLast=_start;
+                    CaptureMouse();UpdateCursor(_start);return;
+                }
+                SetSelectedAnnotation(null);
                 int i = 0; foreach (var p in Handles()) { if ((p - _start).Length < 12) { _drag = i + 2; break; } i++; }
                 if(_drag==0&&_videoRecording&&WantsPointer(_start))
                 {
@@ -622,6 +670,7 @@ public sealed class RegionSelectionWindow : Window
         {
             if(_tool!=AnnotationTool.Select){Cursor=Cursors.Pen;return;}
             if(Selection.Width<=0){Cursor=Cursors.Cross;return;}
+            if(Selection.Contains(point)&&HitAnnotation(point) is not null){Cursor=Cursors.Hand;return;}
             if(_videoRecording&&HitHandle(point)<0&&WantsPointer(point))
             {
                 Cursor=Math.Abs(point.X-Selection.Left)<=10||Math.Abs(point.X-Selection.Right)<=10?Cursors.SizeWE:
@@ -642,6 +691,16 @@ public sealed class RegionSelectionWindow : Window
         {
             if (!IsMouseCaptured){UpdateCursor(PixelPoint(e));return;}
             var p = PixelPoint(e); p.X = Math.Clamp(p.X, 0, _desktop.Width); p.Y = Math.Clamp(p.Y, 0, _desktop.Height);
+            if(_draggingAnnotation && _selectedAnnotation is not null)
+            {
+                var delta=p-_annotationLast;
+                if(delta.Length>0)
+                {
+                    if(!_annotationMoveSaved){SaveAnnotationUndo();_annotationMoveSaved=true;}
+                    _selectedAnnotation.Translate(delta);_annotationLast=p;InvalidateVisual();AnnotationsUpdated?.Invoke();
+                }
+                return;
+            }
             if(_annotationDraft is not null)
             {
                 _annotationDraft.End=p;if(_annotationDraft.Tool is AnnotationTool.Pen or AnnotationTool.Highlighter)_annotationDraft.Points.Add(p);InvalidateVisual();AnnotationsUpdated?.Invoke();return;
@@ -701,10 +760,41 @@ public sealed class RegionSelectionWindow : Window
             var delta=moved.TopLeft-r.TopLeft;foreach(var annotation in _annotations)annotation.Translate(delta);Selection=moved;
             InvalidateVisual();SelectionUpdated?.Invoke();
         }
-        public void SetTool(AnnotationTool tool){_tool=tool;Cursor=tool==AnnotationTool.Select?Cursors.Cross:Cursors.Pen;InvalidateVisual();}
+        private AnnotationModel? HitAnnotation(Point point)=>_annotations.LastOrDefault(annotation=>annotation.HitTest(point));
+        private void SetSelectedAnnotation(AnnotationModel? annotation)
+        {
+            if(ReferenceEquals(_selectedAnnotation,annotation))return;
+            _selectedAnnotation=annotation;InvalidateVisual();
+        }
+        private void SaveAnnotationUndo()
+        {
+            _annotationUndo.Push(_annotations.Select(annotation=>annotation.Clone()).ToList());
+            if(_annotationUndo.Count>100)
+            {
+                var recent=_annotationUndo.Take(100).Reverse().ToArray();_annotationUndo.Clear();
+                foreach(var state in recent)_annotationUndo.Push(state);
+            }
+        }
+        public void MoveSelected(int x,int y)
+        {
+            if(_selectedAnnotation is null)return;
+            SaveAnnotationUndo();_selectedAnnotation.Translate(new Vector(x,y));InvalidateVisual();AnnotationsUpdated?.Invoke();
+        }
+        public void DeleteSelected()
+        {
+            if(_selectedAnnotation is null)return;
+            SaveAnnotationUndo();_annotations.Remove(_selectedAnnotation);SetSelectedAnnotation(null);
+            AnnotationsUpdated?.Invoke();
+        }
+        public void SetTool(AnnotationTool tool){_tool=tool;if(tool!=AnnotationTool.Select)SetSelectedAnnotation(null);Cursor=tool==AnnotationTool.Select?Cursors.Cross:Cursors.Pen;InvalidateVisual();}
         public void SetColor(Color color)=>_color=color;
         public void SetStrokeWidth(double value)=>_strokeWidth=Math.Clamp(value,1,24);
-        public void Undo(){if(_annotations.Count==0)return;_annotations.RemoveAt(_annotations.Count-1);InvalidateVisual();AnnotationsUpdated?.Invoke();}
+        public void Undo()
+        {
+            if(_annotationUndo.Count==0)return;
+            _annotations.Clear();_annotations.AddRange(_annotationUndo.Pop());SetSelectedAnnotation(null);
+            InvalidateVisual();AnnotationsUpdated?.Invoke();
+        }
         public DRect PixelRectangle() => new(_desktop.X+(int)Selection.X,_desktop.Y+(int)Selection.Y,Math.Max(1,(int)Selection.Width),Math.Max(1,(int)Selection.Height));
         public AnnotationDocument ExportDocument()
         {
@@ -737,17 +827,21 @@ public sealed class RegionSelectionWindow : Window
             if(!_liveMode&&!_videoLive&&_image is not null)dc.DrawImage(_image,new Rect(0,0,_desktop.Width,_desktop.Height));
             var mask = new CombinedGeometry(GeometryCombineMode.Exclude,new RectangleGeometry(new Rect(0,0,_desktop.Width,_desktop.Height)),new RectangleGeometry(Selection));
             dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(155,0,0,0)),null,mask);
-            if(_liveMode&&_tool!=AnnotationTool.Select)
+            if(_liveMode)
                 dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(1,0,0,0)),null,Selection);
             if(_videoLive&&Selection.Width>0)
             {
-                if(!_videoRecording||_tool!=AnnotationTool.Select)
-                    dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(1,0,0,0)),null,Selection);
+                dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(1,0,0,0)),null,Selection);
                 dc.DrawRectangle(null,new Pen(new SolidColorBrush(Color.FromArgb(1,0,0,0)),18),Selection);
             }
             dc.DrawRectangle(null,new Pen(Brushes.DeepSkyBlue,2),Selection);
             if(_drawAnnotationsOnSurface)
                 foreach(var annotation in _annotations)DrawQuickAnnotation(dc,annotation);
+            if(_selectedAnnotation is not null)
+            {
+                var bounds=_selectedAnnotation.Bounds;bounds.Inflate(6,6);
+                dc.DrawRectangle(null,new Pen(Brushes.DeepSkyBlue,1){DashStyle=DashStyles.Dash},bounds);
+            }
             if (Selection.Width > 0) foreach (var p in Handles()) dc.DrawRectangle(Brushes.White,new Pen(Brushes.DeepSkyBlue,1),new Rect(p.X-4,p.Y-4,8,8));
             var label = $"{(int)Selection.Width} × {(int)Selection.Height}";
             var ft = new FormattedText(label,System.Globalization.CultureInfo.CurrentCulture,FlowDirection.LeftToRight,new Typeface("Segoe UI"),16,Brushes.White,1);

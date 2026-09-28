@@ -7,6 +7,7 @@
   <ItemGroup>
     <Compile Include="../../src/PromptixCapture/Services/FileNames.cs" Link="Source/FileNames.cs" />
     <Compile Include="../../src/PromptixCapture/Services/FrameMatcher.cs" Link="Source/FrameMatcher.cs" />
+    <Compile Include="../../src/PromptixCapture/Services/ContinuousWheelPump.cs" Link="Source/ContinuousWheelPump.cs" />
     <Compile Include="../../src/PromptixCapture/Services/ScrollingFrameMatcher.cs" Link="Source/ScrollingFrameMatcher.cs" />
     <Compile Include="../../src/PromptixCapture/Services/LocalData.cs" Link="Source/LocalData.cs" />
     <Compile Include="../../src/PromptixCapture/Services/VideoRegionSize.cs" Link="Source/VideoRegionSize.cs" />

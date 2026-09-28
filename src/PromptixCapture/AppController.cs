@@ -185,18 +185,19 @@ public sealed class AppController : IDisposable
                 try{accepted=picker.ShowDialog()==true;}
                 finally{if(ReferenceEquals(_scrolling,picker))_scrolling=null;}
                 if(!accepted)return;
-                // Let the selection overlay finish closing before writing to
-                // the clipboard, so its window no longer covers other apps.
+                // Let the selector close before writing the result to the clipboard.
                 await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ContextIdle);
                 if(purpose==CapturePurpose.ScrollingScreenshot && picker.ScrollingResult is {} scrollResult)
                 {
+                    var marks=picker.ExportAnnotations();
                     var document=new AnnotationDocument(scrollResult.Image);
-                    foreach(var mark in picker.ExportAnnotations())
+                    foreach(var mark in marks)
                     {
                         mark.Translate(new System.Windows.Vector(-scrollResult.SourceCrop.X,-scrollResult.SourceCrop.Y));
                         document.Items.Add(mark);
                     }
                     var output=document.Items.Count==0?scrollResult.Image:new AnnotationCanvas(document).Export();
+                    SaveScreenshot(output,HistoryMediaType.ScrollingScreenshot);
                     await ImageExportService.CopyAsync(output);
                     Notify("Длинный снимок скопирован в буфер обмена");
                     return;
@@ -246,7 +247,7 @@ public sealed class AppController : IDisposable
         if(!EnsureScreenshotFolder(settings))return;
         var path=ImageExportService.DefaultPath(image,settings);ImageExportService.Save(image,path,settings.JpegQuality);
         _history.Add(new HistoryItem{Path=path,Type=type,Width=image.PixelWidth,Height=image.PixelHeight});
-        Notify((type==HistoryMediaType.ScrollingScreenshot?"Длинный снимок сохранён: ":"Снимок сохранён: ")+Path.GetFileName(path));
+        AppNotifications.Show((type==HistoryMediaType.ScrollingScreenshot?"Длинный снимок сохранён: ":"Снимок сохранён: ")+Path.GetFileName(path),path);
     }
     private void Notify(string text)
     {AppNotifications.Show(text);}

@@ -36,7 +36,7 @@ public sealed class AnnotationCanvas : FrameworkElement
         Document.Checkpoint();Selected.Color=color;Selected.Thickness=thickness;Selected.FontSize=fontSize;Selected.Filled=filled;Document.Notify();
     }
     public void ClearSelection(){Selected=null;SelectionChanged?.Invoke(null);InvalidateVisual();}
-    public void DeleteSelected(){if(Selected is null)return;Document.Checkpoint();Document.Items.Remove(Selected);Selected=null;Document.Notify();}
+    public void DeleteSelected(){if(Selected is null)return;Document.Checkpoint();Document.Items.Remove(Selected);Selected=null;SelectionChanged?.Invoke(null);Document.Notify();}
     private Point Location(MouseEventArgs e){var p=e.GetPosition(this);return new Point(Math.Clamp(p.X,0,Width-1),Math.Clamp(p.Y,0,Height-1));}
     private void Down(object sender,MouseButtonEventArgs e)
     {
@@ -50,7 +50,7 @@ public sealed class AnnotationCanvas : FrameworkElement
                 return;
             }
             if(Selected is not null && (Selected.Bounds.BottomRight-p).Length<14){Document.Checkpoint();_beforeResize=Selected.Clone();_moving=true;CaptureMouse();return;}
-            Selected=Document.Items.LastOrDefault(a=>{var b=a.Bounds;b.Inflate(Math.Max(6,a.Thickness),Math.Max(6,a.Thickness));return b.Contains(p);});
+            Selected=Document.Items.LastOrDefault(a=>a.HitTest(p));
             SelectionChanged?.Invoke(Selected);
             if(Selected is not null){Document.Checkpoint();_moving=true;CaptureMouse();}
             InvalidateVisual();return;

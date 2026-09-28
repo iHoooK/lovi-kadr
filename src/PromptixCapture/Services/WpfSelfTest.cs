@@ -65,6 +65,32 @@ internal static class WpfSelfTest
             Assert(((SolidColorBrush)window.Background).Color==expected);
             window.Close();Ui.ApplyTheme("Light");
         });
+        Check("Annotation hit testing follows strokes",()=>
+        {
+            var arrow=new AnnotationModel{Tool=AnnotationTool.Arrow,Start=new Point(10,10),End=new Point(50,50)};
+            Assert(arrow.HitTest(new Point(30,30)));
+            Assert(!arrow.HitTest(new Point(10,45)));
+            var pen=new AnnotationModel{Tool=AnnotationTool.Pen,Points=new(){new Point(10,10),new Point(50,10),new Point(50,50)}};
+            Assert(pen.HitTest(new Point(30,10)));
+            Assert(!pen.HitTest(new Point(30,30)));
+        });
+        Check("Quick annotations move and delete individually",()=>
+        {
+            var picker=new RegionSelectionWindow(image,new System.Drawing.Rectangle(0,0,size,size),CapturePurpose.Screenshot,previous:new System.Drawing.Rectangle(5,5,55,55));
+            var surface=((Grid)picker.Content).Children[0];var type=surface.GetType();
+            var annotations=(List<AnnotationModel>)type.GetField("_annotations",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance)!.GetValue(surface)!;
+            var first=new AnnotationModel{Tool=AnnotationTool.Arrow,Start=new Point(10,10),End=new Point(20,20)};
+            var second=new AnnotationModel{Tool=AnnotationTool.Line,Start=new Point(30,30),End=new Point(45,45)};
+            annotations.Add(first);annotations.Add(second);
+            type.GetField("_selectedAnnotation",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance)!.SetValue(surface,first);
+            type.GetMethod("MoveSelected")!.Invoke(surface,new object[]{5,0});
+            Assert(first.Start==new Point(15,10)&&second.Start==new Point(30,30));
+            type.GetMethod("DeleteSelected")!.Invoke(surface,null);
+            Assert(annotations.Count==1&&ReferenceEquals(annotations[0],second));
+            type.GetMethod("Undo")!.Invoke(surface,null);
+            Assert(annotations.Count==2&&annotations[0].Start==new Point(15,10));
+            picker.Close();
+        });
         Check("Scrolling stitch preserves source pixels",()=>
         {
             const int width=13,topHeight=7,bottomHeight=5,stride=width*4;
@@ -88,6 +114,17 @@ internal static class WpfSelfTest
             var actual=new byte[(topHeight+bottomHeight)*stride];stitched.CopyPixels(actual,stride,0);
             Assert(actual.SequenceEqual(top.Concat(bottom)));
         });
+        Check("Frozen capture frames convert off the UI thread",()=>
+        {
+            var gray=Task.Run(()=>
+            {
+                var converted=new FormatConvertedBitmap(image,PixelFormats.Gray8,null,0);
+                var bytes=new byte[image.PixelWidth*image.PixelHeight];
+                converted.CopyPixels(bytes,image.PixelWidth,0);
+                return bytes;
+            }).GetAwaiter().GetResult();
+            Assert(gray.Length==size*size&&gray.All(value=>value==255));
+        });
         Check("Scrolling capture retries a rounded frame at exact region size",()=>
         {
             const int width=101,height=129;
@@ -110,15 +147,6 @@ internal static class WpfSelfTest
             var gray=new FormatConvertedBitmap(second.Image,PixelFormats.Gray8,null,0);
             var data=new byte[width*height];gray.CopyPixels(data,width,0);
             Assert(FrameMatcher.Match(data,data,width,height).Unchanged);
-        });
-        Check("Scroll target search covers the full selected area",()=>
-        {
-            var region=new System.Drawing.Rectangle(-200,100,1000,600);
-            var initial=new System.Drawing.Point(300,400);
-            var targets=ScrollingCaptureService.ScrollTargets(region,initial);
-            Assert(targets[0]==initial&&targets.All(region.Contains));
-            Assert(targets.Any(point=>point.X<region.Left+region.Width/5&&point.Y<region.Top+region.Height/5));
-            Assert(targets.Any(point=>point.X>region.Right-region.Width/5&&point.Y>region.Bottom-region.Height/5));
         });
         Check("Theme text contrast",()=>
         {

@@ -23,6 +23,22 @@ public partial class App : Application
             return;
         }
 
+        if (e.Args.Length == 1 &&
+            (e.Args[0] == "--enable-autostart" || e.Args[0] == "--disable-autostart"))
+        {
+            try
+            {
+                Services.AutostartService.SetEnabled(e.Args[0] == "--enable-autostart");
+                Shutdown(0);
+            }
+            catch (Exception ex)
+            {
+                Services.AppLog.Error("Configure autostart", ex);
+                Shutdown(1);
+            }
+            return;
+        }
+
         _singleInstanceMutex = new Mutex(true, MutexName, out var createdNew);
         _ownsMutex = createdNew;
         if (!createdNew)

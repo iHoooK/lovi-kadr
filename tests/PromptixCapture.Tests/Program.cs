@@ -155,6 +155,18 @@ Test("Nested scroll area keeps its full width and vertical position",()=>
     Assert(result.Viewport.Top<=top&&result.Viewport.Bottom>=top+paneHeight);
     Assert(result.Viewport.Width<width/2&&result.Viewport.Height<height);
 });
+Test("Wheel input continues while a frame is captured",()=>Task.Run(async()=>
+{
+    using var cancel=new CancellationTokenSource();
+    int pulses=0;
+    var pump=ContinuousWheelPump.RunAsync(()=>true,()=>true,()=>120,
+        delta=>{Assert(delta==120);Interlocked.Increment(ref pulses);},()=>20,cancel.Token);
+    await Task.Delay(180);
+    int duringCapture=Volatile.Read(ref pulses);
+    cancel.Cancel();
+    try{await pump;}catch(OperationCanceledException){}
+    Assert(duringCapture>=3,$"Expected repeated scrolling during capture, got {duringCapture} pulses");
+}).GetAwaiter().GetResult());
 foreach(var line in lines)Console.WriteLine(line);
 Console.WriteLine($"RESULT: {passed} passed, {failed} failed");
 Environment.ExitCode=failed==0?0:1;

@@ -18,6 +18,9 @@ internal static class NativeMethods
     [DllImport("user32.dll")] internal static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] internal static extern bool GetWindowRect(IntPtr handle, out RECT rect);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsCallback callback,IntPtr parameter);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr handle);
+    private delegate bool EnumWindowsCallback(IntPtr handle,IntPtr parameter);
     [DllImport("dwmapi.dll")] internal static extern int DwmGetWindowAttribute(IntPtr handle, int attr, out RECT rect, int size);
     [DllImport("user32.dll")] internal static extern bool GetCursorPos(out POINT point);
     [DllImport("user32.dll",EntryPoint="SetCursorPos")] private static extern bool SetCursorPos(int x,int y);
@@ -61,6 +64,21 @@ internal static class NativeMethods
     {
         var hwnd = new WindowInteropHelper(window).Handle;
         return SetWindowDisplayAffinity(hwnd, 0x11);
+    }
+    internal static IntPtr ExternalWindowAt(System.Drawing.Point point)
+    {
+        // Ignore our floating capture controls when locating the window
+        // under the selected area.
+        IntPtr result=IntPtr.Zero;
+        EnumWindows((handle,_)=>
+        {
+            if(!IsWindowVisible(handle)||!GetWindowRect(handle,out var bounds)||
+                !bounds.Rectangle.Contains(point))return true;
+            GetWindowThreadProcessId(handle,out var processId);
+            if(processId==Environment.ProcessId)return true;
+            result=handle;return false;
+        },IntPtr.Zero);
+        return result;
     }
     internal static bool IsExcludedFromCapture(Window window)
     {

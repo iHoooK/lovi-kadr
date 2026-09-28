@@ -6,6 +6,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using PromptixCapture.Helpers;
 using PromptixCapture.Models;
+using PromptixCapture.Windows;
 
 namespace PromptixCapture.Services;
 
@@ -17,16 +18,16 @@ public static class AppNotifications
 
     public static void Configure(Func<GeneralSettings> settings)=>_settings=settings;
 
-    public static void Show(string message)
+    public static void Show(string message,string? savedPath=null)
     {
         var app=Application.Current;
         if(app is null || _settings is null)return;
-        if(!app.Dispatcher.CheckAccess()){app.Dispatcher.BeginInvoke(new Action(()=>Show(message)));return;}
+        if(!app.Dispatcher.CheckAccess()){app.Dispatcher.BeginInvoke(new Action(()=>Show(message,savedPath)));return;}
         var settings=_settings();
         if(settings.QuietMode)return;
         if(settings.ShowNotifications)
         {
-            try{ShowWindow(message);}catch(Exception ex){AppLog.Error("Notification window",ex);}
+            try{ShowWindow(message,savedPath);}catch(Exception ex){AppLog.Error("Notification window",ex);}
         }
         if(settings.PlaySounds)
         {
@@ -34,7 +35,7 @@ public static class AppNotifications
         }
     }
 
-    private static void ShowWindow(string message)
+    private static void ShowWindow(string message,string? savedPath)
     {
         var screen=System.Windows.Forms.Screen.FromPoint(NativeMethods.CursorPosition);
         var window=new Window
@@ -43,14 +44,14 @@ public static class AppNotifications
             ResizeMode=ResizeMode.NoResize,AllowsTransparency=true,Background=Brushes.Transparent,
             ShowInTaskbar=false,ShowActivated=false,Topmost=true,Opacity=0
         };
-        var card=new Border{CornerRadius=new CornerRadius(12),BorderThickness=new Thickness(1),Padding=new Thickness(14,10,14,10)};
+        var card=new Border{CornerRadius=new CornerRadius(12),BorderThickness=new Thickness(1),Padding=new Thickness(14,10,14,10),Cursor=savedPath is null?System.Windows.Input.Cursors.Arrow:System.Windows.Input.Cursors.Hand};
         card.SetResourceReference(Border.BackgroundProperty,"SurfaceBrush");
         card.SetResourceReference(Border.BorderBrushProperty,"AccentBrush");
         var row=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
         var symbol=new TextBlock{Text="✓",FontSize=24,FontWeight=FontWeights.Bold,Width=36,VerticalAlignment=VerticalAlignment.Center};
         symbol.SetResourceReference(TextBlock.ForegroundProperty,"AccentBrush");
         var labels=new StackPanel{VerticalAlignment=VerticalAlignment.Center};
-        var title=new TextBlock{Text="ЛОВИКАДР",FontSize=11,FontWeight=FontWeights.Bold};
+        var title=new TextBlock{Text=savedPath is null?"ЛОВИКАДР":"ЛОВИКАДР · ПОКАЗАТЬ В ПАПКЕ",FontSize=11,FontWeight=FontWeights.Bold};
         title.SetResourceReference(TextBlock.ForegroundProperty,"AccentBrush");
         var detail=new TextBlock{Text=message,FontSize=13,TextWrapping=TextWrapping.Wrap,MaxWidth=270,MaxHeight=48};
         detail.SetResourceReference(TextBlock.ForegroundProperty,"TextPrimaryBrush");
@@ -58,7 +59,7 @@ public static class AppNotifications
         row.Children.Add(symbol);row.Children.Add(labels);card.Child=row;window.Content=card;
         window.SourceInitialized+=(_,_)=>NativeMethods.ExcludeFromCapture(window);
         window.Closed+=(_,_)=>{Visible.Remove(window);Arrange(screen);};
-        card.MouseLeftButtonDown+=(_,_)=>window.Close();
+        card.MouseLeftButtonDown+=(_,_)=>{window.Close();if(savedPath is not null)Ui.Reveal(savedPath);};
         if(Visible.Count>=3)Visible[0].Close();
         Visible.Add(window);window.Show();Arrange(screen);
         window.BeginAnimation(Window.OpacityProperty,new DoubleAnimation(0,1,TimeSpan.FromMilliseconds(180)));

@@ -30,6 +30,48 @@ public sealed class AnnotationModel
         }
     }
     public void Translate(Vector delta) { Start += delta; End += delta; for(int i=0;i<Points.Count;i++) Points[i] += delta; }
+    public bool HitTest(Point point,double tolerance=7)
+    {
+        var b=Bounds;
+        b.Inflate(tolerance+Thickness/2,tolerance+Thickness/2);
+        if(Tool!=AnnotationTool.Arrow && !b.Contains(point))return false;
+        if(Tool is AnnotationTool.Text or AnnotationTool.Number or AnnotationTool.Blur or AnnotationTool.Pixelate or AnnotationTool.Redact)return true;
+        if(Tool is AnnotationTool.Pen or AnnotationTool.Highlighter)
+        {
+            var radius=tolerance+(Tool==AnnotationTool.Highlighter?Math.Max(12,Thickness*4):Thickness)/2;
+            return Points.Count==1?(Points[0]-point).Length<=radius:
+                Points.Zip(Points.Skip(1),(a,z)=>DistanceToSegment(point,a,z)).Any(distance=>distance<=radius);
+        }
+        if(Tool is AnnotationTool.Line or AnnotationTool.Arrow)
+        {
+            if(DistanceToSegment(point,Start,End)<=tolerance+Thickness/2)return true;
+            if(Tool==AnnotationTool.Arrow && (End-Start).Length>1)
+            {
+                var v=End-Start;v.Normalize();var side=new Vector(-v.Y,v.X);double n=Math.Max(12,Thickness*4);
+                return DistanceToSegment(point,End,End-v*n+side*n*.5)<=tolerance+Thickness/2 ||
+                       DistanceToSegment(point,End,End-v*n-side*n*.5)<=tolerance+Thickness/2;
+            }
+            return false;
+        }
+        if(Filled)return true;
+        if(Tool==AnnotationTool.Rectangle)
+            return Math.Min(Math.Abs(point.X-Bounds.Left),Math.Abs(point.X-Bounds.Right))<=tolerance+Thickness/2 ||
+                   Math.Min(Math.Abs(point.Y-Bounds.Top),Math.Abs(point.Y-Bounds.Bottom))<=tolerance+Thickness/2;
+        if(Tool==AnnotationTool.Ellipse)
+        {
+            var r=Bounds;double rx=Math.Max(1,r.Width/2),ry=Math.Max(1,r.Height/2);
+            double distance=Math.Abs(Math.Sqrt(Math.Pow((point.X-r.X-rx)/rx,2)+Math.Pow((point.Y-r.Y-ry)/ry,2))-1);
+            return distance<=Math.Min(1,(tolerance+Thickness/2)/Math.Min(rx,ry));
+        }
+        return true;
+    }
+    private static double DistanceToSegment(Point p,Point a,Point b)
+    {
+        var ab=b-a;double lengthSquared=ab.X*ab.X+ab.Y*ab.Y;
+        if(lengthSquared<.001)return (p-a).Length;
+        double t=Math.Clamp(Vector.Multiply(p-a,ab)/lengthSquared,0,1);
+        return (p-(a+ab*t)).Length;
+    }
     public void ResizeFrom(AnnotationModel before, Rect target)
     {
         var source=before.Bounds;

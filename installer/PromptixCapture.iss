@@ -10,9 +10,9 @@ AppId={{D775F941-FA98-40AD-B96F-1417858DD72E}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher=iHoooK
-DefaultDirName={localappdata}\Programs\LoviKadr
+DefaultDirName={autopf}\LoviKadr
 DefaultGroupName={#AppName}
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\release
@@ -28,12 +28,18 @@ LicenseFile=..\LICENSE
 MinVersion=10.0.19041
 
 [Languages]
-Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
+Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"; LicenseFile: "License.ru.txt"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[CustomMessages]
+russian.DesktopIconTask=Создать значок на рабочем столе
+english.DesktopIconTask=Create a desktop icon
+russian.AutostartTask=Запускать ЛовиКадр при входе в Windows
+english.AutostartTask=Start LoviKadr when signing in to Windows
+
 [Tasks]
-Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; Flags: unchecked
-Name: "autostart"; Description: "Запускать при входе в Windows"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:DesktopIconTask}"; Flags: unchecked
+Name: "autostart"; Description: "{cm:AutostartTask}"; Flags: unchecked
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -43,10 +49,11 @@ Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 Name: "{group}\Удалить {#AppName}"; Filename: "{uninstallexe}"
 
-[Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "LoviKadr"; ValueData: """{app}\{#AppExe}"" --startup"; Tasks: autostart; Flags: uninsdeletevalue
-
 [Run]
+Filename: "{app}\{#AppExe}"; Parameters: "--enable-autostart"; Tasks: autostart; Flags: runasoriginaluser runhidden
 Filename: "{app}\{#AppExe}"; Description: "Запустить ЛовиКадр"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{app}\{#AppExe}"; Parameters: "--disable-autostart"; RunOnceId: "RemoveAutostart"; Flags: runhidden skipifdoesntexist
 
 ; Do not delete Pictures, Videos, settings or logs during uninstall.

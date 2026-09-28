@@ -99,11 +99,10 @@ public sealed class SettingsWindow : Window
                 break;
             case 3:
                 Heading("Автоматический длинный снимок");
-                Number("Задержка после прокрутки, мс (150–2000)",_draft.Scrolling.SettleDelayMs,v=>_draft.Scrolling.SettleDelayMs=v);
-                Number("Шаг прокрутки за серию (120–960)",_draft.Scrolling.WheelDelta,v=>_draft.Scrolling.WheelDelta=v);
+                Number("Задержка после шага, мс (150–2000)",_draft.Scrolling.SettleDelayMs,v=>_draft.Scrolling.SettleDelayMs=v);
+                Number("Шаг колеса (120–960)",_draft.Scrolling.WheelDelta,v=>_draft.Scrolling.WheelDelta=v);
                 Number("Максимальная высота (1000–100000 px)",_draft.Scrolling.MaxOutputHeight,v=>_draft.Scrolling.MaxOutputHeight=v);
-                Number("Одинаковых кадров до остановки (2–6)",_draft.Scrolling.UnchangedFramesToStop,v=>_draft.Scrolling.UnchangedFramesToStop=v);
-                Note("Курсор внутри выбранной области — автопрокрутка; снаружи — пауза. Если участок под курсором не листается, программа попробует другие участки рамки. Для сложных страниц уменьшите шаг до 120–240.");break;
+                Note("Выделите область и нажмите «Начать захват». Пока курсор внутри рамки, программа прокручивает страницу. При выходе курсора прокрутка приостанавливается. «Стоп» сохранит снимок, даже если страница не прокручивалась. Для сложных страниц уменьшите шаг до 120.");break;
             case 4:
                 Heading("Видео • MP4 / H.264");Folder("Папка",_draft.Video.Folder,v=>_draft.Video.Folder=v);
                 Input("Шаблон имени",_draft.Video.FileNameTemplate,v=>_draft.Video.FileNameTemplate=v);
@@ -133,8 +132,6 @@ public sealed class SettingsWindow : Window
                 Link("YouTube · Promptix","https://www.youtube.com/@promptix");
                 Link("Telegram · Promptix","https://t.me/promptix_ru");
                 Link("Telegram · Кодовая Артель","https://t.me/codeartel");
-                Link("Написать на почту","mailto:hello@promptix.ru");
-                Link("GitHub · iHoooK","https://github.com/iHoooK");
                 _page.Children.Add(Ui.Text("Поддержать разработку",16));
                 Note("Если ЛовиКадр полезен, вы можете поддержать развитие проекта.");
                 Link("DonationAlerts","https://www.donationalerts.com/r/promptix");
