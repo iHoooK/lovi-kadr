@@ -99,7 +99,7 @@ public sealed class AppController : IDisposable
             _settings.Save(settings);Ui.ApplyTheme(settings.General.Theme);
             if(typeof(HotkeySettings).GetProperties().Select(p=>p.GetValue(settings.Hotkeys) as string).Any(v=>v?.Contains("PrintScreen",StringComparison.OrdinalIgnoreCase)==true))_printScreenSnipping.DisableForThisSession();
             ReportHotkeys(_hotkeys.Register(settings.Hotkeys));BuildMenu();
-        },tab,()=>new HistoryWindow(_history,true).Show());
+        },tab,()=>new HistoryWindow(_history,true).Show(),InstallUpdate);
         _settingsWindow.Closed+=(_,_)=>_settingsWindow=null;_settingsWindow.Show();
     }
     private void ReportHotkeys(List<string> errors)
@@ -251,6 +251,17 @@ public sealed class AppController : IDisposable
     }
     private void Notify(string text)
     {AppNotifications.Show(text);}
+    private bool InstallUpdate(DownloadedInstaller installer)
+    {
+        if(_capturing || _recording is not null || _scrolling is not null)
+        {MessageBox.Show("Сначала остановите запись или захват и дождитесь сохранения файла.","Обновление ЛовиКадра");return false;}
+        if(WpfApplication.Current.Windows.OfType<EditorWindow>().Any())
+        {MessageBox.Show("Сохраните нужные снимки и закройте окна редактора перед обновлением.","Обновление ЛовиКадра");return false;}
+        // If UAC is cancelled or launch fails, keep the application running.
+        UpdateInstallService.Launch(installer);
+        WpfApplication.Current.Shutdown();
+        return true;
+    }
     private void Exit()
     {
         if(_recording is not null||_scrolling is not null){MessageBox.Show("Сначала остановите запись и дождитесь сохранения файла.","ЛовиКадр");return;}

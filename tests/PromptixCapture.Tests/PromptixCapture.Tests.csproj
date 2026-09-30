@@ -11,6 +11,7 @@
     <Compile Include="../../src/PromptixCapture/Services/ScrollingFrameMatcher.cs" Link="Source/ScrollingFrameMatcher.cs" />
     <Compile Include="../../src/PromptixCapture/Services/LocalData.cs" Link="Source/LocalData.cs" />
     <Compile Include="../../src/PromptixCapture/Services/VideoRegionSize.cs" Link="Source/VideoRegionSize.cs" />
+    <Compile Include="../../src/PromptixCapture/Services/UpdateService.cs" Link="Source/UpdateService.cs" />
     <Compile Include="../../src/PromptixCapture/Models/AppSettings.cs" Link="Source/AppSettings.cs" />
     <Compile Include="../../src/PromptixCapture/Models/Enums.cs" Link="Source/Enums.cs" />
     <Compile Include="../../src/PromptixCapture/Models/HistoryItem.cs" Link="Source/HistoryItem.cs" />

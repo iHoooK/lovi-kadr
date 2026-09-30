@@ -19,9 +19,9 @@
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <RuntimeFrameworkVersion>10.0.12</RuntimeFrameworkVersion>
     <Prefer32Bit>false</Prefer32Bit>
-    <Version>0.1.0</Version>
-    <AssemblyVersion>0.1.0.0</AssemblyVersion>
-    <FileVersion>0.1.0.0</FileVersion>
+    <Version>0.1.1</Version>
+    <AssemblyVersion>0.1.1.0</AssemblyVersion>
+    <FileVersion>0.1.1.0</FileVersion>
     <Product>ЛовиКадр</Product>
     <Authors>iHoooK</Authors>
     <Description>Локальное приложение для снимков экрана, длинных скриншотов и записи видео в Windows.</Description>

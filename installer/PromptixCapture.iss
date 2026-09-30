@@ -2,13 +2,14 @@
   #error Supply /DSourceDir=full-path-to-portable-directory
 #endif
 #define AppName "ЛовиКадр"
-#define AppVersion "0.1.0"
+#define AppVersion RemoveFileExt(GetVersionNumbersString(SourceDir + "\LoviKadr.exe"))
 #define AppExe "LoviKadr.exe"
 
 [Setup]
 AppId={{D775F941-FA98-40AD-B96F-1417858DD72E}
 AppName={#AppName}
 AppVersion={#AppVersion}
+AppMutex=Local\LoviKadr.SingleInstance
 AppPublisher=iHoooK
 DefaultDirName={autopf}\LoviKadr
 DefaultGroupName={#AppName}

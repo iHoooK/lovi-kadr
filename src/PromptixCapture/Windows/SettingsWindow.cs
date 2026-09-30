@@ -8,7 +8,7 @@ using PromptixCapture.Services;
 
 namespace PromptixCapture.Windows;
 
-public sealed class SettingsWindow : Window
+public sealed partial class SettingsWindow : Window
 {
     private AppSettings _draft;
     private string _savedTheme;
@@ -18,10 +18,10 @@ public sealed class SettingsWindow : Window
     private readonly StackPanel _page=new(){Margin=new Thickness(26,12,26,20)};
     private readonly ListBox _nav=new(){Width=200,BorderThickness=new Thickness(0),Background=Brushes.Transparent,Margin=new Thickness(12,18,8,12)};
     private int _current=-1;
-    public SettingsWindow(AppSettings settings,Action<AppSettings> save,int tab=0,Action? openRecentScreenshots=null)
+    public SettingsWindow(AppSettings settings,Action<AppSettings> save,int tab=0,Action? openRecentScreenshots=null,Func<DownloadedInstaller,bool>? installUpdate=null)
     {
         Ui.ThemeWindow(this);
-        _draft=LocalData.Clone(settings);_savedTheme=_draft.General.Theme;_save=save;_openRecentScreenshots=openRecentScreenshots;
+        _draft=LocalData.Clone(settings);_savedTheme=_draft.General.Theme;_save=save;_openRecentScreenshots=openRecentScreenshots;_installUpdate=installUpdate;
         _nav.SetResourceReference(Control.ForegroundProperty,"TextPrimaryBrush");
         Title="ЛовиКадр — настройки";Width=930;Height=720;MinWidth=760;MinHeight=560;WindowStartupLocation=WindowStartupLocation.CenterScreen;
         var root=new DockPanel();Content=root;
@@ -43,7 +43,7 @@ public sealed class SettingsWindow : Window
         };
         // Theme choice is previewed immediately, but closing without a later
         // save must leave the rest of the application on the saved theme.
-        Closed+=(_,_)=>Ui.ApplyTheme(_savedTheme);
+        Closed+=(_,_)=>{Ui.ApplyTheme(_savedTheme);_updatesClosed=true;_updateCancellation?.Cancel();};
         _nav.SelectedIndex=tab;
     }
     private void Read(){foreach(var read in _readers)read();}
@@ -120,6 +120,7 @@ public sealed class SettingsWindow : Window
                 Note("ЛовиКадр — локальная программа для Windows: снимайте область экрана, создавайте длинные снимки и записывайте видео. Добавляйте пометки к снимкам, копируйте их или сохраняйте на компьютер. Аккаунт и облако не требуются.");
                 Note("Версия: "+App.DisplayVersion);
                 Note("Снимки и видео сохраняются в выбранных вами папках. Настройки и история хранятся на этом компьютере. Код программы распространяется по лицензии MIT.");
+                BuildUpdateSection();
                 _page.Children.Add(Ui.Text("Диагностика",16));
                 _page.Children.Add(Ui.Button("Открыть журнал",()=>{if(File.Exists(AppLog.PathName))Ui.Open(AppLog.PathName);else MessageBox.Show(this,"Журнал пока пуст.");}));
                 _page.Children.Add(Ui.Button("Скопировать диагностику",()=>Clipboard.SetText($"ЛовиКадр {App.DisplayVersion}\nOS: {Environment.OSVersion}\n64-bit: {Environment.Is64BitProcess}\nMonitors: {System.Windows.Forms.Screen.AllScreens.Length}\n.NET: {Environment.Version}")));

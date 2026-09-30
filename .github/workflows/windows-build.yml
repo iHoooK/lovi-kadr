@@ -28,5 +28,6 @@ jobs:
           name: LoviKadr-win-x64
           path: |
             release/LoviKadr-Setup-x64.exe
-            release/LoviKadr-Portable/
+            release/LoviKadr-Portable-x64.zip
+            release/SHA256SUMS.txt
           if-no-files-found: error

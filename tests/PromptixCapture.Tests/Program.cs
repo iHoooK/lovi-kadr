@@ -167,6 +167,7 @@ Test("Wheel input continues while a frame is captured",()=>Task.Run(async()=>
     try{await pump;}catch(OperationCanceledException){}
     Assert(duringCapture>=3,$"Expected repeated scrolling during capture, got {duringCapture} pulses");
 }).GetAwaiter().GetResult());
+UpdateTests.Run(Test,Assert);
 foreach(var line in lines)Console.WriteLine(line);
 Console.WriteLine($"RESULT: {passed} passed, {failed} failed");
 Environment.ExitCode=failed==0?0:1;

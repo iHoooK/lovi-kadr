@@ -337,6 +337,13 @@ internal static class WpfSelfTest
             var content=Walk(about).OfType<TextBlock>().Select(x=>x.Text).ToArray();
             Assert(content.Any(x=>x.Contains("локальная программа")));
             Assert(!content.Any(x=>x.Contains("TEST_REPORT")));
+            var updateCheck=Walk(about).OfType<Button>().Single(x=>x.Content as string=="Проверить обновления");
+            Assert(updateCheck.IsEnabled);
+            Assert(Walk(about).OfType<Button>().Single(x=>x.Content as string=="Скачать и установить…").Visibility==Visibility.Collapsed);
+            Assert(content.Any(x=>x.Contains("только по кнопке")));
+            var navigation=Walk(about).OfType<ListBox>().Single();
+            navigation.SelectedIndex=0;navigation.SelectedIndex=5;
+            Assert(ReferenceEquals(updateCheck,Walk(about).OfType<Button>().Single(x=>x.Content as string=="Проверить обновления")));
             about.Close();
             var developer=new SettingsWindow(new AppSettings(),_=>{},6);
             var links=Walk(developer).OfType<Hyperlink>().Select(x=>x.NavigateUri?.ToString()).ToArray();

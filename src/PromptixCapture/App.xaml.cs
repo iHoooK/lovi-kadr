@@ -81,5 +81,5 @@ public partial class App : Application
     }
 
     public static string DisplayVersion =>
-        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0";
+        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.1";
 }
