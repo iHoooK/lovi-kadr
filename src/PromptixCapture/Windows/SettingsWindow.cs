@@ -135,7 +135,7 @@ public sealed class SettingsWindow : Window
                 _page.Children.Add(Ui.Text("Поддержать разработку",16));
                 Note("Если ЛовиКадр полезен, вы можете поддержать развитие проекта.");
                 Link("DonationAlerts","https://www.donationalerts.com/r/promptix");
-                Link("Boosty","https://boosty.to/promtex");
+                Link("Boosty","https://boosty.to/promptix");
                 break;
         }
     }

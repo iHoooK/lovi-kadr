@@ -341,7 +341,7 @@ internal static class WpfSelfTest
             var developer=new SettingsWindow(new AppSettings(),_=>{},6);
             var links=Walk(developer).OfType<Hyperlink>().Select(x=>x.NavigateUri?.ToString()).ToArray();
             Assert(links.Contains("https://promptix.ru/"));
-            Assert(links.Contains("https://boosty.to/promtex"));
+            Assert(links.Contains("https://boosty.to/promptix"));
             developer.Close();
         });
         results.Add($"RESULT: {results.Count-failures} passed, {failures} failed");
