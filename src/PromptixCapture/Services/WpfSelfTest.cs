@@ -242,27 +242,104 @@ internal static class WpfSelfTest
             screenshot.Close();
             picker.Close();
         });
-        Check("Video frame keeps a live clear center and dark surroundings",()=>
+        Check("Video recording leaves the desktop transparent and keeps frame controls",()=>
         {
             var picker=new RegionSelectionWindow(null,new System.Drawing.Rectangle(0,0,100,100),CapturePurpose.Video,previous:new System.Drawing.Rectangle(30,30,40,40));
             var surface=(FrameworkElement)((Grid)picker.Content).Children[0];
             surface.Measure(new Size(100,100));surface.Arrange(new Rect(0,0,100,100));
             static byte Alpha(FrameworkElement visual,int x,int y)
             {
+                visual.Measure(new Size(100,100));
+                visual.Arrange(new Rect(0,0,100,100));
+                visual.UpdateLayout();
                 var target=new RenderTargetBitmap(100,100,96,96,PixelFormats.Pbgra32);target.Render(visual);
                 var bytes=new byte[100*100*4];target.CopyPixels(bytes,100*4,0);
                 return bytes[(y*100+x)*4+3];
             }
-            Assert(Alpha(surface,90,90)>100&&Alpha(surface,50,50)<5);
+            Assert(Alpha(surface,90,90)>100&&Alpha(surface,50,50)==1);
             surface.GetType().GetMethod("BeginVideoRecording")!.Invoke(surface,new object[]{new System.Drawing.Rectangle(0,0,100,100)});
-            Assert(Alpha(surface,90,90)>100&&Alpha(surface,50,50)<5);
+            byte outside=Alpha(surface,90,90),inside=Alpha(surface,50,50);
+            if(outside!=0||inside!=0)throw new InvalidOperationException($"Expected zero alpha during recording: outside={outside}, inside={inside}");
+            Assert(Alpha(surface,30,45)>0);
             var wantsPointer=surface.GetType().GetMethod("WantsPointer")!;
             Assert((bool)wantsPointer.Invoke(surface,new object[]{new Point(30,45)})!);
             Assert(!(bool)wantsPointer.Invoke(surface,new object[]{new Point(50,50)})!);
+            surface.GetType().GetMethod("SetTool")!.Invoke(surface,new object[]{AnnotationTool.Pen});
+            Assert(Alpha(surface,50,50)>0&&Alpha(surface,90,90)==0);
+            Assert((bool)wantsPointer.Invoke(surface,new object[]{new Point(50,50)})!);
+            surface.GetType().GetMethod("SetTool")!.Invoke(surface,new object[]{AnnotationTool.Select});
+            Assert(Alpha(surface,50,50)==0);
             surface.GetType().GetMethod("Move")!.Invoke(surface,new object[]{5,5});
             var moved=(System.Drawing.Rectangle)surface.GetType().GetMethod("PixelRectangle")!.Invoke(surface,null)!;
             Assert(moved.X==35&&moved.Y==35&&moved.Width==40&&moved.Height==40);
             picker.Close();
+        });
+        Check("Native video input reaches a window on another UI thread",()=>
+        {
+            var desktop=CaptureService.Desktop;
+            var work=System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
+            var region=new System.Drawing.Rectangle(work.X+80,work.Y+100,300,240);
+            var ready=new TaskCompletionSource<(Window Window,IntPtr Handle)>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var thread=new System.Threading.Thread(()=>
+            {
+                try
+                {
+                    var target=new Window{WindowStyle=WindowStyle.None,ResizeMode=ResizeMode.NoResize,
+                        Background=Brushes.Navy,ShowInTaskbar=false,ShowActivated=false,Topmost=true};
+                    target.SourceInitialized+=(_,_)=>Helpers.NativeMethods.PlacePixels(target,work);
+                    target.Show();
+                    ready.SetResult((target,new System.Windows.Interop.WindowInteropHelper(target).Handle));
+                    System.Windows.Threading.Dispatcher.Run();
+                }
+                catch(Exception ex){ready.TrySetException(ex);}
+            }){IsBackground=true};
+            thread.SetApartmentState(System.Threading.ApartmentState.STA);thread.Start();
+            var target=ready.Task.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+            var picker=new RegionSelectionWindow(null,desktop,CapturePurpose.Video,previous:region);
+            var flags=System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance;
+            var type=picker.GetType();
+            var surface=(FrameworkElement)((Grid)picker.Content).Children[0];
+            void FlushRendering()
+            {
+                var frame=new System.Windows.Threading.DispatcherFrame();
+                var timer=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromMilliseconds(150)};
+                timer.Tick+=(_,_)=>{timer.Stop();frame.Continue=false;};timer.Start();
+                System.Windows.Threading.Dispatcher.PushFrame(frame);
+            }
+            IntPtr WindowAt(int x,int y)=>Helpers.NativeMethods.WindowFromPoint(new Helpers.NativeMethods.POINT{X=x,Y=y});
+            try
+            {
+                picker.Show();FlushRendering();
+                var center=new System.Drawing.Point(region.X+region.Width/2,region.Y+region.Height/2);
+                var pickerHandle=new System.Windows.Interop.WindowInteropHelper(picker).Handle;
+                Assert(WindowAt(center.X,center.Y)==pickerHandle);
+                type.GetField("_videoStarted",flags)!.SetValue(picker,true);
+                surface.GetType().GetMethod("BeginVideoRecording")!.Invoke(surface,new object[]{work});
+                ((Border)type.GetField("_banner",flags)!.GetValue(picker)!).Visibility=Visibility.Collapsed;
+                FlushRendering();
+                Assert(WindowAt(center.X,center.Y)==target.Handle);
+                Assert(WindowAt(work.Right-40,work.Bottom-40)==target.Handle);
+                Assert(WindowAt(region.Left,center.Y)==pickerHandle);
+                var actions=(Border)type.GetField("_actions",flags)!.GetValue(picker)!;
+                var actionPoint=actions.PointToScreen(new Point(actions.ActualWidth/2,actions.ActualHeight/2));
+                Assert(WindowAt((int)actionPoint.X,(int)actionPoint.Y)==pickerHandle);
+                var hook=type.GetMethod("VideoInputHook",flags)!;
+                object[] message={pickerHandle,0x21,IntPtr.Zero,IntPtr.Zero,false};
+                Assert((IntPtr)hook.Invoke(picker,message)! ==new IntPtr(3)&&(bool)message[4]);
+                surface.GetType().GetMethod("SetTool")!.Invoke(surface,new object[]{AnnotationTool.Pen});
+                FlushRendering();
+                Assert(WindowAt(center.X,center.Y)==pickerHandle);
+                message[4]=false;
+                Assert((IntPtr)hook.Invoke(picker,message)! ==IntPtr.Zero&&!(bool)message[4]);
+                surface.GetType().GetMethod("SetTool")!.Invoke(surface,new object[]{AnnotationTool.Select});
+                FlushRendering();Assert(WindowAt(center.X,center.Y)==target.Handle);
+            }
+            finally
+            {
+                type.GetField("_videoFinished",flags)!.SetValue(picker,true);picker.Close();
+                target.Window.Dispatcher.Invoke(()=>{target.Window.Close();target.Window.Dispatcher.BeginInvokeShutdown(System.Windows.Threading.DispatcherPriority.Send);});
+                thread.Join(TimeSpan.FromSeconds(5));
+            }
         });
         Check("Recent screenshots exclude video and limit results",()=>
         {

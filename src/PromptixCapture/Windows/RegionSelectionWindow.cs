@@ -29,6 +29,7 @@ public sealed class RegionSelectionWindow : Window
     private readonly Button _compactActions;
     private readonly TextBlock _heading;
     private readonly TextBlock _description;
+    private readonly Action<AnnotationTool> _selectTool;
     private readonly CaptureService? _capture;
     private readonly ScrollingSettings? _scrollSettings;
     private ScrollingWindow? _scrollingControl;
@@ -96,6 +97,7 @@ public sealed class RegionSelectionWindow : Window
             foreach(var (key,button) in toolButtons)
                 button.SetResourceReference(Button.BorderBrushProperty,key==tool?"AccentBrush":"BorderBrush");
         }
+        _selectTool=SelectTool;
         if(purpose is CapturePurpose.Screenshot or CapturePurpose.ScrollingScreenshot or CapturePurpose.Video)
         {
             foreach(var (tool,icon,label) in toolItems)
@@ -179,7 +181,7 @@ public sealed class RegionSelectionWindow : Window
         _surface.AnnotationsUpdated+=()=>_videoAnnotations?.Refresh();
         _root.SizeChanged+=(_,_)=>UpdateFloatingUi();
         Content=_root;UpdateFloatingUi();
-        SourceInitialized += (_, _) => { NativeMethods.PlacePixels(this, desktop);if(purpose is CapturePurpose.Video or CapturePurpose.ScrollingScreenshot)_captureExcluded=NativeMethods.ExcludeFromCapture(this);if(purpose==CapturePurpose.Video)((HwndSource)PresentationSource.FromVisual(this)!).AddHook(HitTestHook); };
+        SourceInitialized += (_, _) => { NativeMethods.PlacePixels(this, desktop);if(purpose is CapturePurpose.Video or CapturePurpose.ScrollingScreenshot)_captureExcluded=NativeMethods.ExcludeFromCapture(this);if(purpose==CapturePurpose.Video)((HwndSource)PresentationSource.FromVisual(this)!).AddHook(VideoInputHook); };
         Loaded += (_, _) =>
         {
             NativeMethods.PlacePixels(this, desktop);
@@ -260,7 +262,7 @@ public sealed class RegionSelectionWindow : Window
             _recorder.Start(region,_videoSettings,_videoPath);
             _videoStarted=true;_outputRegion=_appliedRegion=region;
             _surface.SetSelection(region);
-            _surface.BeginVideoRecording(monitor.Bounds);
+            BeginVideoInteraction(monitor.Bounds);
             _videoTime!.Visibility=Visibility.Visible;
             _videoTimer.Tick+=(_,_)=>
             {
@@ -291,6 +293,18 @@ public sealed class RegionSelectionWindow : Window
             if(_recorder is not null)
                 try{await Task.Run(_recorder.Dispose);}catch(Exception ex){AppLog.Error("Dispose video recorder",ex);}
         }
+    }
+    private void BeginVideoInteraction(DRect monitor)
+    {
+        // Drawing tools deliberately intercept input. Always start in the mode
+        // that lets the user interact with the application being recorded.
+        _selectTool(AnnotationTool.Select);
+        _surface.BeginVideoRecording(monitor);
+        _banner.Visibility=Visibility.Collapsed;
+        if(Mouse.Captured is not null)Mouse.Capture(null);
+        var region=_surface.PixelRectangle();
+        var target=NativeMethods.ExternalWindowAt(new System.Drawing.Point(region.X+region.Width/2,region.Y+region.Height/2));
+        if(target!=IntPtr.Zero)NativeMethods.SetForegroundWindow(target);
     }
     private void RefreshVideoControls()
     {
@@ -407,20 +421,16 @@ public sealed class RegionSelectionWindow : Window
         if(_scrollingControl is {} control)control.Cancel();
         else if(!_scrollingActive)DialogResult=false;
     }
-    private IntPtr HitTestHook(IntPtr hwnd,int message,IntPtr wParam,IntPtr lParam,ref bool handled)
+    private IntPtr VideoInputHook(IntPtr hwnd,int message,IntPtr wParam,IntPtr lParam,ref bool handled)
     {
-        if(message!=0x84 || !_videoStarted || _videoFinished)return IntPtr.Zero;
-        var cursor=NativeMethods.CursorPosition;
-        var point=_root.PointFromScreen(new Point(cursor.X,cursor.Y));
-        static bool Contains(FrameworkElement element,Point point)
+        // WM_MOUSEACTIVATE: using capture controls or dragging the frame must
+        // not take keyboard focus away from the game/browser. Annotation tools
+        // can activate the window so their keyboard shortcuts still work.
+        if(message==0x21 && _videoStarted && !_videoFinished && _surface.CurrentTool==AnnotationTool.Select)
         {
-            if(element.Visibility!=Visibility.Visible)return false;
-            return new Rect(Canvas.GetLeft(element),Canvas.GetTop(element),element.ActualWidth,element.ActualHeight).Contains(point);
+            handled=true;return new IntPtr(3); // MA_NOACTIVATE, without eating the click
         }
-        if(Contains(_actions,point)||Contains(_compactActions,point)||Contains(_tools,point)||Contains(_compactTools,point))return IntPtr.Zero;
-        var local=new Point(cursor.X-_desktop.X,cursor.Y-_desktop.Y);
-        if(_surface.WantsPointer(local))return IntPtr.Zero;
-        handled=true;return new IntPtr(-1);
+        return IntPtr.Zero;
     }
     private static TextBlock OverlayText(string text,double size)=>new(){Text=text,FontSize=size,Foreground=Brushes.White,Margin=new Thickness(4,2,4,2),TextWrapping=TextWrapping.Wrap};
     private static void ThemeMenu(ContextMenu menu)
@@ -825,14 +835,28 @@ public sealed class RegionSelectionWindow : Window
             double sx = ActualWidth / _desktop.Width, sy = ActualHeight / _desktop.Height;
             dc.PushTransform(new ScaleTransform(sx, sy));
             if(!_liveMode&&!_videoLive&&_image is not null)dc.DrawImage(_image,new Rect(0,0,_desktop.Width,_desktop.Height));
-            var mask = new CombinedGeometry(GeometryCombineMode.Exclude,new RectangleGeometry(new Rect(0,0,_desktop.Width,_desktop.Height)),new RectangleGeometry(Selection));
-            dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(155,0,0,0)),null,mask);
+            if(!_videoRecording)
+            {
+                var mask = new CombinedGeometry(GeometryCombineMode.Exclude,new RectangleGeometry(new Rect(0,0,_desktop.Width,_desktop.Height)),new RectangleGeometry(Selection));
+                dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(155,0,0,0)),null,mask);
+            }
             if(_liveMode)
                 dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(1,0,0,0)),null,Selection);
             if(_videoLive&&Selection.Width>0)
             {
-                dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(1,0,0,0)),null,Selection);
-                dc.DrawRectangle(null,new Pen(new SolidColorBrush(Color.FromArgb(1,0,0,0)),18),Selection);
+                // Layered-window mouse hit testing uses actual pixel alpha.
+                // HTTRANSPARENT only forwards within the same native thread;
+                // even alpha=1 blocks input to a browser in another process.
+                var pointerBrush=new SolidColorBrush(Color.FromArgb(1,0,0,0));
+                if(!_videoRecording||_tool!=AnnotationTool.Select)
+                    dc.DrawRectangle(pointerBrush,null,Selection);
+                dc.DrawRectangle(null,new Pen(pointerBrush,20),Selection);
+                if(_videoRecording&&_tool==AnnotationTool.Select)
+                {
+                    dc.PushClip(new RectangleGeometry(Selection));
+                    foreach(var annotation in _annotations)DrawQuickAnnotation(dc,annotation);
+                    dc.Pop();
+                }
             }
             dc.DrawRectangle(null,new Pen(Brushes.DeepSkyBlue,2),Selection);
             if(_drawAnnotationsOnSurface)
